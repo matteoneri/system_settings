@@ -33,30 +33,46 @@ fi
 # Determine category (OWN/FNA) from project path
 category="${project%%/*}"
 
-# Pick browser and claude config based on category
+# Pick browser, claude config, and terminal bg based on category
 if [[ "$category" == "FNA" ]]; then
     browser_cmd="firefox"
     claude_config_dir="$HOME/.claude-fna"
+    kitty_bg="#1a0a0a"
 else
     browser_cmd="brave"
     claude_config_dir="$HOME/.claude-own"
+    kitty_bg="#0a0a1a"
 fi
 
-# Split vertical so new windows stack below existing ones
-i3-msg 'splitv'
+# Navigate to workspace level so a second project creates a new column
+i3-msg 'focus parent; focus parent; focus parent; focus parent; split h'
 
-# Top: yazi
-kitty --directory "$path" -e yazi &
+# Layout target:
+#   tabbed[yazi, browser]
+#   ─────────────────────
+#          claude
+#
+# Two projects side by side:
+#   tabbed[yazi1, browser1] || tabbed[yazi2, browser2]
+#   ────────────────────────||────────────────────────
+#          claude1           ||         claude2
+
+# 1. Open yazi (creates new column if workspace already has windows)
+kitty -o "background=$kitty_bg" --directory "$path" -e yazi &
 sleep 1
 
-# Tab the browser next to yazi
-i3-msg 'layout tabbed'
+# 2. Split vertically: claude will go below yazi
+i3-msg 'splitv'
+kitty -o "background=$kitty_bg" --directory "$path" -e env CLAUDE_CONFIG_DIR="$claude_config_dir" claude &
+sleep 1
+
+# 3. Focus back up to yazi, split horizontally for the browser tab
+i3-msg 'focus up; splith'
 $browser_cmd --new-window "https://claude.ai" &
 sleep 1
 
-# Split vertical on the tabbed container, bottom: claude CLI
-i3-msg 'focus parent; splitv'
-kitty --directory "$path" -e env CLAUDE_CONFIG_DIR="$claude_config_dir" claude &
+# 4. Make yazi+browser container tabbed
+i3-msg 'layout tabbed'
 
 # Obsidian if vault exists
 if [ -d "$path/docs/.obsidian" ]; then

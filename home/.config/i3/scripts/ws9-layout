@@ -1,17 +1,8 @@
 #!/bin/bash
-# Launch Spotify and Newsboat (tabbed) on workspace 9
+# Launch Spotify on workspace 9
 
 sleep 2
 
-# Switch to workspace 9
-i3-msg 'workspace "9"'
+i3-msg 'workspace "9:"'
 
-# Launch Spotify
 spotify &
-sleep 3
-
-# Tab the container
-i3-msg 'layout tabbed'
-
-# Launch Newsboat in kitty
-kitty -e newsboat &

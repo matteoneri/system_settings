@@ -61,5 +61,57 @@ claude() {
 # Project launcher
 proj() { ~/.config/i3/scripts/project-launch "$@"; }
 
+# Kitty background color based on project directory
+_kitty_bg_for_dir() {
+    [[ "$TERM" != "xterm-kitty" ]] && return
+    local dir="$PWD"
+    local bg
+    if [[ "$dir" == */Projects/ActiveProjects/OWN/* || "$dir" == */Projects/ActiveProjects/OWN ]]; then
+        bg="#0a0a1a"  # very dark blue for OWN
+    elif [[ "$dir" == */Projects/ActiveProjects/FNA/* || "$dir" == */Projects/ActiveProjects/FNA ]]; then
+        bg="#1a0a0a"  # very dark red for FNA
+    else
+        bg="#000000"  # black default
+    fi
+    kitty @ --to "unix:@kitty-$KITTY_PID" set-colors -a background="$bg" 2>/dev/null
+}
+autoload -U add-zsh-hook
+add-zsh-hook chpwd _kitty_bg_for_dir
+_kitty_bg_for_dir  # apply on shell start too
+
+# Weekly system settings sync check
+_settings_sync_check() {
+    local sync_dir="$HOME/Documents/Projects/system_settings"
+    local stamp="$sync_dir/.last_sync"
+    local now=$(date +%s)
+    local week=$((7 * 24 * 60 * 60))
+
+    if [[ ! -f "$stamp" ]] || (( now - $(cat "$stamp") > week )); then
+        echo "\n\033[1;33m[system_settings]\033[0m Last sync was over a week ago."
+        echo -n "Run sync now? [y/N] "
+        read -r -k 1 answer
+        [[ "$answer" != $'\n' ]] && echo
+        if [[ "$answer" =~ [yY] ]]; then
+            "$sync_dir/sync.sh"
+            echo "$now" > "$stamp"
+            # Check if there are changes to commit
+            if [[ -n "$(git -C "$sync_dir" status --porcelain)" ]]; then
+                echo ""
+                echo -n "Changes detected. Commit and push? [y/N] "
+                read -r -k 1 answer2
+                [[ "$answer2" != $'\n' ]] && echo
+                if [[ "$answer2" =~ [yY] ]]; then
+                    git -C "$sync_dir" add -A
+                    git -C "$sync_dir" commit -m "Auto-sync $(date +%Y-%m-%d)"
+                    git -C "$sync_dir" push 2>/dev/null || echo "No remote configured, skipping push."
+                fi
+            else
+                echo "No changes detected."
+            fi
+        fi
+    fi
+}
+_settings_sync_check
+
 # System info on terminal open
 archey4

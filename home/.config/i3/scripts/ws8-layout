@@ -1,0 +1,8 @@
+#!/bin/bash
+# Launch Newsboat on workspace 8
+
+sleep 2
+
+i3-msg 'workspace "8:"'
+
+kitty -e newsboat &

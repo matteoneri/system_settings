@@ -1,0 +1,4 @@
+#!/bin/bash
+kitty -e yazi &
+sleep 0.5
+i3-msg "move up; move up; move up; move up; move up"

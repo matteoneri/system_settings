@@ -20,3 +20,4 @@ cache/
 # Session / runtime data
 history.jsonl
 *.log
+.last_sync

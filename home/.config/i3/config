@@ -294,7 +294,7 @@ bindsym $mod+p exec --no-startup-id /usr/local/bin/switch-audio-port
 
 ## App shortcuts
 bindsym $mod+w exec --no-startup-id /usr/bin/firefox
-bindsym $mod+n exec --no-startup-id kitty -e yazi
+bindsym $mod+n exec --no-startup-id ~/.config/i3/scripts/yazi-launch
 bindsym $mod+Shift+d exec --no-startup-id ~/.config/i3/scripts/project-launch
 bindsym Print exec --no-startup-id scrot ~/Screenshots/%Y-%m-%d_%H%M%S.png && notify-send "Screenshot saved"
 bindsym Shift+Print exec --no-startup-id scrot -s ~/Screenshots/%Y-%m-%d_%H%M%S.png && notify-send "Screenshot saved"
@@ -309,16 +309,16 @@ bindsym $mod+Shift+p exec --no-startup-id ~/.config/i3/scripts/power-profiles
 
 # Define names for default workspaces for which we configure key bindings later on.
 # We use variables to avoid repeating the names in multiple places.
-set $ws1 "1:"
-set $ws2 "2:"
-set $ws3 "3:"
-set $ws4 "4:"
-set $ws5 "5:"
+set $ws1 "1"
+set $ws2 "2"
+set $ws3 "3"
+set $ws4 "4"
+set $ws5 "5"
 set $ws6 "6"
 set $ws7 "7"
-set $ws8 "8"
+set $ws8 "8:"
 set $ws9 "9:"
-set $ws10 "10:"
+set $ws10 "10"
 
 # use workspaces on different displays:
 # where you have to replace VGA-0/HDMI-0 with the names for your displays
@@ -330,7 +330,10 @@ set $ws10 "10:"
 #workspace $ws5 output HDMI-0
 
 # bind program to workspace and focus to them on startup:
-# Workspace 9: Spotify + Newsboat (tabbed)
+# Workspace 8: Newsboat
+exec --no-startup-id ~/.config/i3/scripts/ws8-layout
+
+# Workspace 9: Spotify
 for_window [class="Spotify"] move to workspace $ws9
 exec --no-startup-id ~/.config/i3/scripts/ws9-layout
 

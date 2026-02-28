@@ -6,7 +6,7 @@ show-read-feeds no
 show-read-articles no
 
 # Browser
-browser "xdg-open %u"
+browser "firefox --new-window %u"
 
 # Keybindings (vim-like)
 bind-key j down
