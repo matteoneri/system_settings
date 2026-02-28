@@ -1,0 +1,10 @@
+# Credentials and secrets
+*.credentials.json
+.claude.json
+.credentials.json
+*.key
+*.pem
+
+# Caches
+cache/
+*.cache

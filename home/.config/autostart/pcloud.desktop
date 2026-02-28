@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=pCloud Drive
+Comment=Cloud storage service for your files
+Exec="/opt/pcloud/pCloud.AppImage"
+Icon=appimagekit-pcloud
+StartupWMClass=pcloud
+Terminal=false
+Categories=Network;FileTransfer;
+StartupNotify=false
+X-GNOME-Autostart-enabled=true

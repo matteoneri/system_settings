@@ -1,0 +1,25 @@
+# Financial Times
+https://www.ft.com/rss/home "~Financial Times - Home" ft news
+https://www.ft.com/markets?format=rss "~Financial Times - Markets" ft markets
+https://www.ft.com/global-economy?format=rss "~Financial Times - Economy" ft economy
+
+# BBC News
+https://feeds.bbci.co.uk/news/rss.xml "~BBC - Top Stories" bbc news
+https://feeds.bbci.co.uk/news/world/rss.xml "~BBC - World" bbc world
+https://feeds.bbci.co.uk/news/technology/rss.xml "~BBC - Technology" bbc tech
+
+# Anthropic
+https://raw.githubusercontent.com/taobojlen/anthropic-rss-feed/main/anthropic_news_rss.xml "~Anthropic News" anthropic tech
+
+# Bloomberg
+https://feeds.bloomberg.com/markets/news.rss "~Bloomberg - Markets" bloomberg markets
+https://feeds.bloomberg.com/technology/news.rss "~Bloomberg - Technology" bloomberg tech
+https://feeds.bloomberg.com/politics/news.rss "~Bloomberg - Politics" bloomberg politics
+
+# Ethereum
+https://vitalik.eth.limo/feed.xml "~Vitalik Buterin" ethereum blog
+https://blog.ethereum.org/feed.xml "~Ethereum Foundation" ethereum official
+
+# Tech
+https://hnrss.org/frontpage "~Hacker News" tech
+https://www.theverge.com/rss/index.xml "~The Verge" tech

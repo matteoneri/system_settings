@@ -1,0 +1,31 @@
+#!/bin/bash
+
+# Fetch ETH/USD price with 24h change from CoinGecko API
+data=$(curl -sf --max-time 5 \
+  'https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd&include_24hr_change=true')
+
+if [ $? -ne 0 ] || [ -z "$data" ]; then
+    echo "Ξ --"
+    exit 0
+fi
+
+price=$(echo "$data" | jq -r '.ethereum.usd')
+change=$(echo "$data" | jq -r '.ethereum.usd_24h_change')
+
+# Format price (no decimals above 1000, 2 decimals below)
+formatted_price=$(awk "BEGIN {
+    if ($price >= 1000) printf \"%.0f\", $price
+    else printf \"%.2f\", $price
+}")
+
+# Format change percentage
+formatted_change=$(awk "BEGIN { printf \"%+.1f\", $change }")
+
+# Color based on 24h change
+if (( $(awk "BEGIN { print ($change >= 0) }") )); then
+    color="#00ff00"
+else
+    color="#ff0000"
+fi
+
+echo "%{F$color}Ξ $formatted_price (${formatted_change}%)%{F-}"

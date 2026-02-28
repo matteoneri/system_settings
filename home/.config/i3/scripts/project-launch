@@ -1,0 +1,64 @@
+#!/bin/bash
+
+PROJECTS_DIR="$HOME/Documents/Projects/ActiveProjects"
+
+# Build project list: category/project for nested, just name for top-level
+list_projects() {
+    for entry in "$PROJECTS_DIR"/*/; do
+        name=$(basename "$entry")
+        if [[ "$name" == "OWN" || "$name" == "FNA" ]]; then
+            for sub in "$entry"*/; do
+                [ -d "$sub" ] && echo "$name/$(basename "$sub")"
+            done
+        else
+            echo "$name"
+        fi
+    done
+}
+
+if [ -z "$1" ]; then
+    project=$(list_projects | rofi -dmenu -p "Project" -config ~/.config/rofi/rofidmenu.rasi)
+    [ -z "$project" ] && exit 0
+else
+    project="$1"
+fi
+
+path="$PROJECTS_DIR/$project"
+
+if [ ! -d "$path" ]; then
+    notify-send "Project not found" "$path"
+    exit 1
+fi
+
+# Determine category (OWN/FNA) from project path
+category="${project%%/*}"
+
+# Pick browser and claude config based on category
+if [[ "$category" == "FNA" ]]; then
+    browser_cmd="firefox"
+    claude_config_dir="$HOME/.claude-fna"
+else
+    browser_cmd="brave"
+    claude_config_dir="$HOME/.claude-own"
+fi
+
+# Split vertical so new windows stack below existing ones
+i3-msg 'splitv'
+
+# Top: yazi
+kitty --directory "$path" -e yazi &
+sleep 1
+
+# Tab the browser next to yazi
+i3-msg 'layout tabbed'
+$browser_cmd --new-window "https://claude.ai" &
+sleep 1
+
+# Split vertical on the tabbed container, bottom: claude CLI
+i3-msg 'focus parent; splitv'
+kitty --directory "$path" -e env CLAUDE_CONFIG_DIR="$claude_config_dir" claude &
+
+# Obsidian if vault exists
+if [ -d "$path/docs/.obsidian" ]; then
+    obsidian "$path/docs" &
+fi

@@ -1,0 +1,7 @@
+[user]
+	email = matteo@databaker.co
+	name = matteo
+[init]
+	defaultBranch = main
+[core]
+	editor = /usr/bin/vim

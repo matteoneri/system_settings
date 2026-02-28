@@ -1,0 +1,19 @@
+#!/bin/bash
+# Launch chat apps (tabbed) on workspace 10
+
+sleep 2
+
+# Switch to workspace 10
+i3-msg 'workspace "10"'
+
+# Launch Telegram
+telegram-desktop &
+sleep 3
+
+# Tab the container
+i3-msg 'layout tabbed'
+
+# Launch Signal and Slack into the same tabbed container
+signal-desktop &
+sleep 2
+slack &

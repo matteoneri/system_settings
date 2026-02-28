@@ -1,0 +1,32 @@
+# General
+auto-reload yes
+reload-time 30
+reload-threads 4
+show-read-feeds no
+show-read-articles no
+
+# Browser
+browser "xdg-open %u"
+
+# Keybindings (vim-like)
+bind-key j down
+bind-key k up
+bind-key J next-feed articlelist
+bind-key K prev-feed articlelist
+bind-key G end
+bind-key g home
+bind-key l open
+bind-key h quit
+
+# Formatting
+feedlist-format "%4i %n %11u %t"
+articlelist-format "%4i %f %D  %?T?|%-17T| ?%t"
+datetime-format "%b %d"
+
+# Colors
+color listnormal        white   default
+color listfocus         white   color236 bold
+color listnormal_unread green   default  bold
+color listfocus_unread  green   color236 bold
+color info              yellow  color236 bold
+color article           white   default
