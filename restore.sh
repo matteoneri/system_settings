@@ -104,9 +104,23 @@ restore_configs() {
     # Autostart
     cp "$HOME_DIR/.config/autostart/"*.desktop ~/.config/autostart/ 2>/dev/null || true
 
-    # Claude Code
-    cp "$HOME_DIR/claude-code/own/settings.json" ~/.claude-own/settings.json
-    cp "$HOME_DIR/claude-code/fna/settings.json" ~/.claude-fna/settings.json
+    # Claude Code preferences (merge into .claude.json after first login)
+    for acct in own fna; do
+        target="$HOME/.claude-${acct}/.claude.json"
+        prefs="$HOME_DIR/claude-code/${acct}/preferences.json"
+        if [ -f "$target" ] && [ -f "$prefs" ]; then
+            python3 -c "
+import json
+with open('$target') as f: data = json.load(f)
+with open('$prefs') as f: prefs = json.load(f)
+data.update(prefs)
+with open('$target', 'w') as f: json.dump(data, f, indent=2); f.write('\n')
+"
+            echo "    Merged preferences into $target"
+        else
+            echo "    Skipping claude-${acct} (log in first with: CLAUDE_CONFIG_DIR=~/.claude-${acct} claude)"
+        fi
+    done
 
     # Screenlayout
     if [ -f "$HOME_DIR/.screenlayout/monitor.sh" ]; then

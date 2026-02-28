@@ -1,0 +1,7 @@
+{
+  "theme": "dark-daltonized",
+  "autoUpdates": false,
+  "installMethod": "native",
+  "showSpinnerTree": false,
+  "effortCalloutDismissed": true
+}

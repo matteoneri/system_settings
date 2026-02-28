@@ -47,9 +47,19 @@ cp ~/.config/paru/paru.conf "$HOME_DIR/.config/paru/paru.conf"
 # Autostart
 cp ~/.config/autostart/*.desktop "$HOME_DIR/.config/autostart/" 2>/dev/null || true
 
-# Claude Code configs (no credentials)
-cp ~/.claude-own/settings.json "$HOME_DIR/claude-code/own/settings.json"
-cp ~/.claude-fna/settings.json "$HOME_DIR/claude-code/fna/settings.json"
+# Claude Code preferences (extract safe keys only, no credentials)
+for acct in own fna; do
+    python3 -c "
+import json
+with open('$HOME/.claude-${acct}/.claude.json') as f:
+    data = json.load(f)
+safe_keys = ['theme', 'autoUpdates', 'installMethod', 'showSpinnerTree', 'effortCalloutDismissed']
+safe = {k: data[k] for k in safe_keys if k in data}
+with open('$HOME_DIR/claude-code/${acct}/preferences.json', 'w') as f:
+    json.dump(safe, f, indent=2)
+    f.write('\n')
+"
+done
 
 # Screenlayout (optional)
 cp ~/.screenlayout/monitor.sh "$HOME_DIR/.screenlayout/monitor.sh" 2>/dev/null || true

@@ -37,15 +37,24 @@ export PATH="$PATH:$ANDROID_HOME/tools/bin"
 # zkstack completion
 source "$HOME/.zsh/completion/_zkstack.zsh"
 
-# Claude CLI account picker (default: FNA)
+# Claude CLI account auto-switch based on project directory
 claude() {
-    echo "Account: [1] FNA (default)  [2] OWN"
-    read -r -k 1 "choice?"
-    [[ "$choice" != $'\n' ]] && echo
-    if [[ "$choice" == "2" ]]; then
+    local dir="$PWD"
+    if [[ "$dir" == */Projects/ActiveProjects/OWN/* || "$dir" == */Projects/ActiveProjects/OWN ]]; then
+        echo "Claude: using OWN account"
         CLAUDE_CONFIG_DIR="$HOME/.claude-own" command claude "$@"
-    else
+    elif [[ "$dir" == */Projects/ActiveProjects/FNA/* || "$dir" == */Projects/ActiveProjects/FNA ]]; then
+        echo "Claude: using FNA account"
         CLAUDE_CONFIG_DIR="$HOME/.claude-fna" command claude "$@"
+    else
+        echo "Account: [1] FNA (default)  [2] OWN"
+        read -r -k 1 "choice?"
+        [[ "$choice" != $'\n' ]] && echo
+        if [[ "$choice" == "2" ]]; then
+            CLAUDE_CONFIG_DIR="$HOME/.claude-own" command claude "$@"
+        else
+            CLAUDE_CONFIG_DIR="$HOME/.claude-fna" command claude "$@"
+        fi
     fi
 }
 
