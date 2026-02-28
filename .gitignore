@@ -4,7 +4,19 @@
 .credentials.json
 *.key
 *.pem
+*.gpg
+*.asc
+id_rsa*
+id_ed25519*
+*.secret
+*.token
+.env
+.env.*
 
 # Caches
 cache/
 *.cache
+
+# Session / runtime data
+history.jsonl
+*.log

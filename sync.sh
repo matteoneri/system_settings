@@ -14,8 +14,10 @@ cp ~/.zsh/completion/_zkstack.zsh "$HOME_DIR/.zsh/completion/_zkstack.zsh"
 # X11
 cp ~/.Xresources "$HOME_DIR/.Xresources"
 
-# Git
+# Git (strip personal identity)
 cp ~/.gitconfig "$HOME_DIR/.gitconfig"
+sed -i 's/^\(\s*email\s*=\s*\).*/\1YOUR_EMAIL/' "$HOME_DIR/.gitconfig"
+sed -i 's/^\(\s*name\s*=\s*\).*/\1YOUR_NAME/' "$HOME_DIR/.gitconfig"
 
 # i3
 cp ~/.config/i3/config "$HOME_DIR/.config/i3/config"

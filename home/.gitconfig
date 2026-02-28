@@ -1,6 +1,6 @@
 [user]
-	email = matteo@databaker.co
-	name = matteo
+	email = YOUR_EMAIL
+	name = YOUR_NAME
 [init]
 	defaultBranch = main
 [core]

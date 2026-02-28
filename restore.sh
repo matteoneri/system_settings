@@ -67,8 +67,12 @@ restore_configs() {
     cp "$HOME_DIR/.Xresources" ~/.Xresources
     xrdb -merge ~/.Xresources 2>/dev/null || true
 
-    # Git
+    # Git (prompt for identity)
     cp "$HOME_DIR/.gitconfig" ~/.gitconfig
+    read -rp "    Git user.name: " git_name
+    read -rp "    Git user.email: " git_email
+    git config --global user.name "$git_name"
+    git config --global user.email "$git_email"
 
     # i3
     cp "$HOME_DIR/.config/i3/config" ~/.config/i3/config
