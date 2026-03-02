@@ -19,6 +19,8 @@ gnome-bluetooth
 gtk2
 gtk-sharp-2
 ib-tws
+jdk25-graalvm-bin
+kitti3
 koreader-bin
 ledger-live-bin
 ledger-udev
@@ -28,6 +30,7 @@ libcutensor-common
 libdbusmenu-gtk2
 libdigidocpp
 libgnome-keyring
+libsignal-client
 nordvpn-bin
 openfortigui
 pcloud-drive
@@ -39,6 +42,7 @@ reiserfsprogs
 restream
 rm2pdf
 rotki-bin
+signal-cli-native
 signal-desktop-beta-bin
 slack-desktop
 spotify-edge

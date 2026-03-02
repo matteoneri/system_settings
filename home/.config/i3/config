@@ -259,6 +259,10 @@ bindsym $mod+a focus parent
 bindsym $mod+minus move scratchpad
 bindsym $mod+plus scratchpad show
 
+# kitti3 drop-down terminal
+exec --no-startup-id kitti3
+bindsym $mod+y nop kitti3
+
 # open new empty workspace
 bindsym $mod+Shift+n exec --no-startup-id ~/.config/i3/scripts/empty_workspace
 
@@ -330,11 +334,11 @@ set $ws10 "10"
 #workspace $ws5 output HDMI-0
 
 # bind program to workspace and focus to them on startup:
-# Workspace 8: Newsboat
+# Workspace 8: Spotify
+for_window [class="Spotify"] move to workspace $ws8
 exec --no-startup-id ~/.config/i3/scripts/ws8-layout
 
-# Workspace 9: Spotify
-for_window [class="Spotify"] move to workspace $ws9
+# Workspace 9: Newsboat
 exec --no-startup-id ~/.config/i3/scripts/ws9-layout
 
 # Workspace 10: Chat apps (tabbed)

@@ -8,6 +8,7 @@ ant
 arandr
 arc-gtk-theme-eos
 archlinux-xdg-menu
+asciidoc
 aspell
 awesome-terminal-fonts
 aws-cli-v2
@@ -209,6 +210,7 @@ smartmontools
 s-nail
 sof-firmware
 speedtest-cli
+starship
 strongswan
 sudo
 sysfsutils

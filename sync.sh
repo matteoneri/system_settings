@@ -61,6 +61,13 @@ with open('$HOME_DIR/claude-code/${acct}/preferences.json', 'w') as f:
 "
 done
 
+# Kitty
+cp ~/.config/kitty/kitty.conf "$HOME_DIR/.config/kitty/kitty.conf"
+cp ~/.config/kitty/themes/*.conf "$HOME_DIR/.config/kitty/themes/"
+
+# Starship
+cp ~/.config/starship.toml "$HOME_DIR/.config/starship.toml"
+
 # Screenlayout (optional)
 cp ~/.screenlayout/monitor.sh "$HOME_DIR/.screenlayout/monitor.sh" 2>/dev/null || true
 

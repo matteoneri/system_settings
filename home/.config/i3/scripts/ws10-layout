@@ -13,7 +13,7 @@ sleep 3
 # Tab the container
 i3-msg 'layout tabbed'
 
-# Launch Signal and Slack into the same tabbed container
+# Launch Signal, Slack into the same tabbed container
 signal-desktop &
 sleep 2
 slack &

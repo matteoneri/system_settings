@@ -1,6 +1,6 @@
 # Oh My Zsh
 export ZSH="$HOME/.oh-my-zsh"
-ZSH_THEME="amuse"
+ZSH_THEME=""
 
 plugins=(git node postgres python aws terraform gpg-agent nvm)
 
@@ -61,23 +61,23 @@ claude() {
 # Project launcher
 proj() { ~/.config/i3/scripts/project-launch "$@"; }
 
-# Kitty background color based on project directory
-_kitty_bg_for_dir() {
+# Kitty theme based on project directory
+_kitty_theme_for_dir() {
     [[ "$TERM" != "xterm-kitty" ]] && return
     local dir="$PWD"
-    local bg
+    local theme
     if [[ "$dir" == */Projects/ActiveProjects/OWN/* || "$dir" == */Projects/ActiveProjects/OWN ]]; then
-        bg="#0a0a1a"  # very dark blue for OWN
+        theme="$HOME/.config/kitty/themes/Dayfox.conf"
     elif [[ "$dir" == */Projects/ActiveProjects/FNA/* || "$dir" == */Projects/ActiveProjects/FNA ]]; then
-        bg="#1a0a0a"  # very dark red for FNA
+        theme="$HOME/.config/kitty/themes/Hachiko.conf"
     else
-        bg="#000000"  # black default
+        theme="$HOME/.config/kitty/themes/GithubDark.conf"
     fi
-    kitty @ --to "unix:@kitty-$KITTY_PID" set-colors -a background="$bg" 2>/dev/null
+    kitty @ --to "unix:@kitty-$KITTY_PID" set-colors -a "$theme" 2>/dev/null
 }
 autoload -U add-zsh-hook
-add-zsh-hook chpwd _kitty_bg_for_dir
-_kitty_bg_for_dir  # apply on shell start too
+add-zsh-hook chpwd _kitty_theme_for_dir
+_kitty_theme_for_dir  # apply on shell start too
 
 # Weekly system settings sync check
 _settings_sync_check() {
@@ -112,6 +112,9 @@ _settings_sync_check() {
     fi
 }
 _settings_sync_check
+
+# Starship prompt
+eval "$(starship init zsh)"
 
 # System info on terminal open
 archey4

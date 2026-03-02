@@ -1,8 +1,8 @@
 #!/bin/bash
-# Launch Spotify on workspace 9
+# Launch Newsboat on workspace 9
 
 sleep 2
 
 i3-msg 'workspace "9:"'
 
-spotify &
+kitty -e newsboat &

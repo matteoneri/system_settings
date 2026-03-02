@@ -1,0 +1,102 @@
+# Starship prompt configuration
+
+format = """
+$directory\
+$git_branch\
+$git_status\
+$python\
+$nodejs\
+$java\
+$rust\
+$golang\
+$docker_context\
+$terraform\
+$aws\
+$cmd_duration\
+$time\
+$line_break\
+$status\
+$character"""
+
+[character]
+success_symbol = "[>](bold green)"
+error_symbol = "[>](bold red)"
+
+[directory]
+truncation_length = 4
+truncate_to_repo = true
+style = "bold cyan"
+
+[git_branch]
+format = " [$symbol$branch(:$remote_branch)]($style)"
+symbol = " "
+style = "bold purple"
+
+[git_status]
+format = '([$all_status$ahead_behind]($style) )'
+style = "bold red"
+conflicted = "="
+ahead = "⇡${count}"
+behind = "⇣${count}"
+diverged = "⇕⇡${ahead_count}⇣${behind_count}"
+untracked = "?${count}"
+stashed = "*${count}"
+modified = "!${count}"
+staged = "+${count}"
+deleted = "✘${count}"
+
+[python]
+format = ' [${symbol}${version}(\($virtualenv\))]($style)'
+symbol = " "
+style = "yellow"
+
+[nodejs]
+disabled = true
+
+[java]
+format = " [$symbol$version]($style)"
+symbol = " "
+style = "red"
+
+[rust]
+format = " [$symbol$version]($style)"
+symbol = " "
+style = "bold 208"
+
+[golang]
+format = " [$symbol$version]($style)"
+symbol = " "
+style = "bold cyan"
+
+[docker_context]
+format = " [$symbol$context]($style)"
+symbol = " "
+style = "blue"
+
+[terraform]
+format = " [$symbol$workspace]($style)"
+symbol = "󱁢 "
+style = "bold 105"
+detect_folders = [".terraform"]
+detect_files = ["main.tf", "terraform.tf"]
+detect_extensions = []
+
+[aws]
+disabled = true
+
+[cmd_duration]
+min_time = 2_000
+format = " [$duration]($style)"
+style = "bold yellow"
+
+[time]
+disabled = false
+format = " [$time]($style)"
+time_format = "%H:%M:%S"
+style = "bold dimmed white"
+
+[status]
+disabled = false
+format = "[$symbol$status]($style) "
+symbol = "✖ "
+style = "bold red"

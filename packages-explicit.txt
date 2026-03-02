@@ -12,6 +12,7 @@ arandr
 arc-gtk-theme-eos
 archey4
 archlinux-xdg-menu
+asciidoc
 aspell
 awesome-terminal-fonts
 aws-cli-v2
@@ -119,6 +120,7 @@ iwd
 jdk11-openjdk
 jfsutils
 jq
+kitti3
 kitty
 koreader-bin
 ledger-live-bin
@@ -128,6 +130,7 @@ libdvdcss
 libgsf
 libopenraw
 libreoffice-still
+libsignal-client
 libwnck3
 lightdm
 lightdm-slick-greeter
@@ -229,6 +232,7 @@ rsync
 rtkit
 scrot
 sg3_utils
+signal-cli-native
 signal-desktop-beta-bin
 slack-desktop
 smartmontools
@@ -236,6 +240,7 @@ s-nail
 sof-firmware
 speedtest-cli
 spotify-edge
+starship
 strongswan
 sudo
 sysfsutils

@@ -30,3 +30,6 @@ color listnormal_unread green   default  bold
 color listfocus_unread  green   color236 bold
 color info              yellow  color236 bold
 color article           white   default
+
+# Predefined filters
+define-filter "Ethereum" "title =~ \"(?i)ethereum\\|ETH\" or content =~ \"(?i)ethereum\""
