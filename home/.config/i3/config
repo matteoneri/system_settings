@@ -480,6 +480,7 @@ for_window [class="qt5ct" instance="qt5ct"] floating enable
 for_window [class="Bluetooth-sendto" instance="bluetooth-sendto"] floating enable
 for_window [class="Pamac-manager"] floating enable
 for_window [class="obsidian"] floating enable
+for_window [class="pcloud"] floating enable
 for_window [window_role="About"] floating enable
 
 # set border of floating window

@@ -86,9 +86,29 @@ _browser_for_dir() {
     fi
 }
 
+# Auto-detect venv on cd (skip if direnv handles it)
+_auto_venv_check() {
+    [[ -f .envrc ]] && return
+    [[ -n "$VIRTUAL_ENV" ]] && return
+
+    local venv_dir=""
+    for dir in .venv venv env .env; do
+        if [[ -f "$dir/bin/activate" ]]; then
+            venv_dir="$dir"
+            break
+        fi
+    done
+    [[ -z "$venv_dir" ]] && return
+
+    read -q "reply?Virtual env found ($venv_dir). Activate? [y/N] "
+    echo
+    [[ "$reply" == "y" ]] && source "$venv_dir/bin/activate"
+}
+
 autoload -U add-zsh-hook
 add-zsh-hook chpwd _kitty_theme_for_dir
 add-zsh-hook chpwd _browser_for_dir
+add-zsh-hook chpwd _auto_venv_check
 _kitty_theme_for_dir  # apply on shell start too
 _browser_for_dir
 
