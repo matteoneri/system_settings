@@ -17,10 +17,12 @@ baobab
 base
 base-devel
 bash-completion
+bat
 bind
 bluez
 bluez-utils
 brightnessctl
+btop
 btrfs-progs
 cantarell-fonts
 cloudflared
@@ -67,7 +69,9 @@ eos-settings-i3wm
 ethtool
 exfatprogs
 ex-vi-compat
+eza
 f2fs-tools
+fastfetch
 feh
 ffmpegthumbnailer
 fio
@@ -268,4 +272,5 @@ yarn
 yay
 yazi
 zip
+zoxide
 zsh

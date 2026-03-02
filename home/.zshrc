@@ -75,9 +75,22 @@ _kitty_theme_for_dir() {
     fi
     kitty @ --to "unix:@kitty-$KITTY_PID" set-colors -a "$theme" 2>/dev/null
 }
+
+# Default browser based on project directory
+_browser_for_dir() {
+    local dir="$PWD"
+    if [[ "$dir" == */Projects/ActiveProjects/FNA/* || "$dir" == */Projects/ActiveProjects/FNA ]]; then
+        export BROWSER="firefox"
+    else
+        export BROWSER="brave"
+    fi
+}
+
 autoload -U add-zsh-hook
 add-zsh-hook chpwd _kitty_theme_for_dir
+add-zsh-hook chpwd _browser_for_dir
 _kitty_theme_for_dir  # apply on shell start too
+_browser_for_dir
 
 # Weekly system settings sync check
 _settings_sync_check() {
@@ -113,8 +126,19 @@ _settings_sync_check() {
 }
 _settings_sync_check
 
+# Modern CLI aliases
+alias ls='eza'
+alias ll='eza -l --git'
+alias la='eza -la --git'
+alias tree='eza --tree'
+alias cat='bat --paging=never --style=plain'
+alias catp='bat'
+
+# Zoxide (smart cd)
+eval "$(zoxide init zsh)"
+
 # Starship prompt
 eval "$(starship init zsh)"
 
 # System info on terminal open
-archey4
+fastfetch

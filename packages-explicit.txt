@@ -21,12 +21,14 @@ baobab
 base
 base-devel
 bash-completion
+bat
 bind
 blueberry
 bluez
 bluez-utils
 brave-bin
 brightnessctl
+btop
 btrfs-progs
 cantarell-fonts
 cloudflared
@@ -74,7 +76,9 @@ eos-settings-i3wm
 ethtool
 exfatprogs
 ex-vi-compat
+eza
 f2fs-tools
+fastfetch
 feh
 ffmpegthumbnailer
 figma-linux-bin
@@ -302,4 +306,5 @@ yay
 yazi
 zip
 zoho-mail-desktop
+zoxide
 zsh
