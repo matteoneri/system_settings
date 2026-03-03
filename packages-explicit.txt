@@ -22,6 +22,7 @@ base
 base-devel
 bash-completion
 bat
+bibata-cursor-theme-bin
 bind
 blueberry
 bluez
@@ -191,6 +192,7 @@ openfortivpn
 openssh
 os-prober
 pacman-contrib
+papirus-icon-theme
 paru
 patchelf
 pavucontrol
@@ -241,6 +243,7 @@ signal-desktop-beta-bin
 slack-desktop
 smartmontools
 s-nail
+snixembed
 sof-firmware
 speedtest-cli
 spotify-edge

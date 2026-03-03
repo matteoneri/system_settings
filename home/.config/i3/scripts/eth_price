@@ -23,9 +23,9 @@ formatted_change=$(awk "BEGIN { printf \"%+.1f\", $change }")
 
 # Color based on 24h change
 if (( $(awk "BEGIN { print ($change >= 0) }") )); then
-    color="#00ff00"
+    color="#5eeaa0"
 else
-    color="#ff0000"
+    color="#f45070"
 fi
 
 echo "%{F$color}Ξ $formatted_price (${formatted_change}%)%{F-}"

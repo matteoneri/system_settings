@@ -2,6 +2,7 @@ android-sdk
 android-sdk-cmdline-tools-latest
 android-studio
 archey4
+bibata-cursor-theme-bin
 blueberry
 brave-bin
 bridge-utils
