@@ -500,24 +500,21 @@ for_window [class="urxvt"] border pixel 1
 ######################################
 
 # Define colors variables:
-set $darkbluetrans	#08052be6
-set $darkblue		#08052b
-set $lightblue		#5294e2
-set $urgentred		#e53935
+set $bg		#282c34
+set $bgalt		#363a42
+set $amber		#FFB347
+set $alert		#FFE8C0
 set $white		#ffffff
 set $black		#000000
-set $purple		#e345ff
-set $darkgrey		#383c4a
 set $grey		#b0b5bd
-set $mediumgrey		#8b8b8b
-set $yellowbrown	#e1b700
+set $disabled		#a67520
 
 # define colors for windows:
 #class		        	border		bground		text		indicator	child_border
-client.focused		    	$lightblue	$darkblue	$white		$mediumgrey	$mediumgrey
-client.unfocused	    	$darkblue	$darkblue	$grey		$darkgrey	$darkgrey
-client.focused_inactive		$darkblue	$darkblue	$grey		$black		$black
-client.urgent		    	$urgentred	$urgentred	$white		$yellowbrown	$yellowbrown
+client.focused		    	$amber		$bgalt		$white		$amber		$amber
+client.unfocused	    	$bg		$bg		$grey		$bgalt		$bgalt
+client.focused_inactive		$bg		$bg		$grey		$bg		$bg
+client.urgent		    	$alert		$alert		$bg		$amber		$alert
 
 ######################
 # bar settings:      #
