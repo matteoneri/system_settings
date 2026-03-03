@@ -1,0 +1,26 @@
+#!/bin/bash
+
+STATE_FILE="/tmp/ws-icons-state"
+
+if [ ! -f "$STATE_FILE" ]; then
+    # Save current names and strip icons
+    i3-msg -t get_workspaces | jq -r '.[].name | select(test("^[0-9]+:"))' > "$STATE_FILE"
+
+    if [ ! -s "$STATE_FILE" ]; then
+        rm -f "$STATE_FILE"
+        exit 0
+    fi
+
+    while IFS= read -r name; do
+        num="${name%%:*}"
+        i3-msg "rename workspace \"$name\" to \"$num\""
+    done < "$STATE_FILE"
+else
+    # Restore saved names
+    while IFS= read -r name; do
+        num="${name%%:*}"
+        i3-msg "rename workspace \"$num\" to \"$name\""
+    done < "$STATE_FILE"
+
+    rm -f "$STATE_FILE"
+fi
