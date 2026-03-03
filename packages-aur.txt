@@ -12,6 +12,7 @@ flutter-bin
 fonts-droid-fallback
 fonts-noto-hinted
 forticlient-vpn
+gcalcli
 gcc13
 gcc13-libs
 gcc14

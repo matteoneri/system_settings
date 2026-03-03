@@ -90,6 +90,7 @@ flutter-bin
 forticlient-vpn
 fsarchiver
 galculator
+gcalcli
 gimp
 git
 git-filter-repo

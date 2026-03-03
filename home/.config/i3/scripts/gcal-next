@@ -29,17 +29,23 @@ fi
 if (( refresh )); then
     # First line is the date stamp, rest are events
     echo "$today" > "$CACHE_FILE"
-    gcalcli agenda "$today" "$(date -d "$today + 1 day" +%Y-%m-%d)" --tsv 2>/dev/null \
+    gcalcli agenda "$today" "$(date -d "$today + 1 day" +%Y-%m-%d)" \
+        --cal "Matteo Neri @FNA" --cal "matteo.neri920114@gmail.com" --tsv 2>/dev/null \
+        | tail -n +2 \
         | while IFS=$'\t' read -r start_date start_time end_date end_time title; do
             [[ -z "$start_time" || -z "$title" ]] && continue
-            # Format: HH:MM Title
-            hhmm="${start_time%:*}"  # strip seconds if present (HH:MM:SS -> HH:MM)
-            echo "${hhmm} ${title}"
+            echo "${start_time} ${end_time} ${title}"
         done >> "$CACHE_FILE"
 fi
 
-# Read events (skip first line which is the date stamp)
-mapfile -t events < <(tail -n +2 "$CACHE_FILE")
+# Read events (skip first line which is the date stamp), filter past events
+now=$(date +%H:%M)
+mapfile -t events < <(
+    tail -n +2 "$CACHE_FILE" | while IFS=' ' read -r start_time end_time title; do
+        # Keep events that haven't ended yet
+        [[ "$end_time" > "$now" || "$end_time" == "$now" ]] && echo "${start_time} ${title}"
+    done
+)
 
 # No events: output nothing
 [[ ${#events[@]} -eq 0 ]] && exit 0
