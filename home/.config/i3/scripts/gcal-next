@@ -2,16 +2,20 @@
 
 CACHE_FILE="/tmp/polybar-gcal-cache"
 INDEX_FILE="/tmp/polybar-gcal-index"
-MAX_TITLE_LEN=25
+MAX_TITLE_LEN=30
 CACHE_MAX_AGE=1800  # 30 minutes
+
+# Force refresh if called with --force
+force=0
+[[ "${1:-}" == "--force" ]] && force=1
 
 # Check if gcalcli is available
 command -v gcalcli &>/dev/null || exit 0
 
 today=$(date +%Y-%m-%d)
 
-# Refresh cache if missing, stale, or from a different day
-refresh=0
+# Refresh cache if missing, stale, from a different day, or forced
+refresh=$force
 if [[ ! -f "$CACHE_FILE" ]]; then
     refresh=1
 else
@@ -27,15 +31,21 @@ else
 fi
 
 if (( refresh )); then
+    notify-send -t 2000 "Calendar" "Refreshing..."
     # First line is the date stamp, rest are events
     echo "$today" > "$CACHE_FILE"
-    gcalcli agenda "$today" "$(date -d "$today + 1 day" +%Y-%m-%d)" \
-        --cal "Matteo Neri @FNA" --cal "matteo.neri920114@gmail.com" --tsv 2>/dev/null \
+    if gcalcli agenda "$today" "$(date -d "$today + 1 day" +%Y-%m-%d)" \
+        --cal "Matteo Neri @FNA" --cal "matteo.neri920114@gmail.com" --tsv 2>"$CACHE_FILE.err" \
         | tail -n +2 \
         | while IFS=$'\t' read -r start_date start_time end_date end_time title; do
             [[ -z "$start_time" || -z "$title" ]] && continue
             echo "${start_time} ${end_time} ${title}"
-        done >> "$CACHE_FILE"
+        done >> "$CACHE_FILE"; then
+        count=$(( $(wc -l < "$CACHE_FILE") - 1 ))
+        notify-send -t 2000 "Calendar" "$count event(s) today"
+    else
+        notify-send -t 3000 "Calendar" "Error: $(cat "$CACHE_FILE.err")"
+    fi
 fi
 
 # Read events (skip first line which is the date stamp), filter past events
