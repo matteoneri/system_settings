@@ -1,0 +1,64 @@
+#!/bin/bash
+
+CACHE_FILE="/tmp/polybar-gcal-cache"
+INDEX_FILE="/tmp/polybar-gcal-index"
+MAX_TITLE_LEN=25
+CACHE_MAX_AGE=1800  # 30 minutes
+
+# Check if gcalcli is available
+command -v gcalcli &>/dev/null || exit 0
+
+today=$(date +%Y-%m-%d)
+
+# Refresh cache if missing, stale, or from a different day
+refresh=0
+if [[ ! -f "$CACHE_FILE" ]]; then
+    refresh=1
+else
+    cache_day=$(head -1 "$CACHE_FILE")
+    if [[ "$cache_day" != "$today" ]]; then
+        refresh=1
+    else
+        cache_age=$(( $(date +%s) - $(stat -c %Y "$CACHE_FILE") ))
+        if (( cache_age > CACHE_MAX_AGE )); then
+            refresh=1
+        fi
+    fi
+fi
+
+if (( refresh )); then
+    # First line is the date stamp, rest are events
+    echo "$today" > "$CACHE_FILE"
+    gcalcli agenda "$today" "$(date -d "$today + 1 day" +%Y-%m-%d)" --tsv 2>/dev/null \
+        | while IFS=$'\t' read -r start_date start_time end_date end_time title; do
+            [[ -z "$start_time" || -z "$title" ]] && continue
+            # Format: HH:MM Title
+            hhmm="${start_time%:*}"  # strip seconds if present (HH:MM:SS -> HH:MM)
+            echo "${hhmm} ${title}"
+        done >> "$CACHE_FILE"
+fi
+
+# Read events (skip first line which is the date stamp)
+mapfile -t events < <(tail -n +2 "$CACHE_FILE")
+
+# No events: output nothing
+[[ ${#events[@]} -eq 0 ]] && exit 0
+
+# Read and increment rotation index
+index=0
+[[ -f "$INDEX_FILE" ]] && index=$(cat "$INDEX_FILE")
+index=$(( index % ${#events[@]} ))
+
+event="${events[$index]}"
+
+# Truncate title if too long (keep "HH:MM " prefix intact)
+time_part="${event%% *}"
+title_part="${event#* }"
+if (( ${#title_part} > MAX_TITLE_LEN )); then
+    title_part="${title_part:0:$MAX_TITLE_LEN}.."
+fi
+
+echo "${time_part} ${title_part}"
+
+# Write next index
+echo $(( index + 1 )) > "$INDEX_FILE"
