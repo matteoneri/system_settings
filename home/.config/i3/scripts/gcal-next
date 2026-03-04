@@ -45,6 +45,7 @@ if (( refresh )); then
         notify-send -t 2000 "Calendar" "$count event(s) today"
     else
         notify-send -t 3000 "Calendar" "Error: $(cat "$CACHE_FILE.err")"
+        rm -f "$CACHE_FILE"  # remove broken cache so next call retries
     fi
 fi
 

@@ -12,5 +12,5 @@ for m in $(xrandr --query | grep " connected" | cut -d" " -f1); do
     MONITOR=$m polybar main 2>&1 | tee -a /tmp/polybar-$m.log & disown
 done
 
-# Periodic gcal refresh (every 5 min)
-(exec -a polybar-gcal-refresh bash -c 'while true; do sleep 300; polybar-msg action "#gcal.hook.0"; done') & disown
+# Periodic gcal refresh: retry shortly after launch (network may not be up yet), then every 5 min
+(exec -a polybar-gcal-refresh bash -c 'sleep 15; polybar-msg action "#gcal.hook.1"; while true; do sleep 300; polybar-msg action "#gcal.hook.0"; done') & disown
