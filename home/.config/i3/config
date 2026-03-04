@@ -236,7 +236,9 @@ bindsym XF86AudioPrev exec --no-startup-id playerctl previous
 bindsym $mod+p exec --no-startup-id ~/.config/i3/scripts/switch-audio-port
 
 ## App shortcuts
-bindsym $mod+w exec --no-startup-id /usr/bin/firefox
+bindsym $mod+w exec --no-startup-id ~/.config/i3/scripts/random-wallpaper
+bindsym $mod+b exec --no-startup-id brave
+bindsym $mod+Shift+b exec --no-startup-id firefox
 bindsym $mod+n exec --no-startup-id ~/.config/i3/scripts/yazi-launch
 bindsym $mod+Shift+d exec --no-startup-id ~/.config/i3/scripts/project-launch
 bindsym $mod+slash exec --no-startup-id ~/.config/i3/scripts/ws-toggle-icons
