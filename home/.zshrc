@@ -7,7 +7,7 @@ plugins=(git node postgres python aws terraform gpg-agent nvm)
 # Lazy-load nvm via plugin
 zstyle ':omz:plugins:nvm' lazy yes
 
-source $ZSH/oh-my-zsh.sh
+source "$ZSH/oh-my-zsh.sh"
 
 # Editor
 export EDITOR='vim'
@@ -109,6 +109,7 @@ add-zsh-hook chpwd _browser_for_dir
 add-zsh-hook chpwd _auto_venv_check
 _kitty_theme_for_dir  # apply on shell start too
 _browser_for_dir
+_auto_venv_check
 
 # Weekly system settings sync check
 _settings_sync_check() {
@@ -124,7 +125,6 @@ _settings_sync_check() {
         [[ "$answer" != $'\n' ]] && echo
         if [[ "$answer" =~ [yY] ]]; then
             "$sync_dir/sync.sh"
-            echo "$now" > "$stamp"
             # Check if there are changes to commit
             if [[ -n "$(git -C "$sync_dir" status --porcelain)" ]]; then
                 echo ""
@@ -135,9 +135,11 @@ _settings_sync_check() {
                     git -C "$sync_dir" add -A
                     git -C "$sync_dir" commit -m "Auto-sync $(date +%Y-%m-%d)"
                     git -C "$sync_dir" push
+                    echo "$now" > "$stamp"
                 fi
             else
                 echo "No changes detected."
+                echo "$now" > "$stamp"
             fi
         fi
     fi
