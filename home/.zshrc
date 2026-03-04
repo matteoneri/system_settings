@@ -152,6 +152,20 @@ alias tree='eza --tree'
 alias cat='bat --paging=never --style=plain'
 alias catp='bat'
 
+# Timezone update + optional mirror sort
+tzupdate() {
+    command tzupdate "$@"
+    echo -n "Sort Arch + EndeavourOS mirrors? [y/N] "
+    read -r -k 1 answer
+    [[ "$answer" != $'\n' ]] && echo
+    if [[ "$answer" =~ [yY] ]]; then
+        echo "Sorting Arch mirrors..."
+        sudo reflector --latest 20 --protocol https --sort rate --save /etc/pacman.d/mirrorlist
+        echo "Sorting EndeavourOS mirrors..."
+        sudo eos-rankmirrors
+    fi
+}
+
 # Zoxide (smart cd)
 eval "$(zoxide init zsh)"
 
