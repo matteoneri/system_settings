@@ -338,6 +338,7 @@ for_window [class="Spotify"] move to workspace $ws8
 exec --no-startup-id ~/.config/i3/scripts/ws8-layout
 
 # Workspace 9: Newsboat
+for_window [class="kitty" instance="newsboat"] move to workspace $ws9
 exec --no-startup-id ~/.config/i3/scripts/ws9-layout
 
 # Workspace 10: Chat apps (tabbed)

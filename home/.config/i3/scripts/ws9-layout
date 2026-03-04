@@ -5,4 +5,4 @@ sleep 2
 
 i3-msg 'workspace number 9'
 
-kitty -e newsboat &
+kitty --name newsboat -e newsboat &

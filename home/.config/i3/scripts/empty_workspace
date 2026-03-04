@@ -5,4 +5,4 @@ MAX_DESKTOPS=20
 USED=$(i3-msg -t get_workspaces | jq '.[].num')
 EMPTY_WORKSPACE=$(comm -23 <(seq 1 $MAX_DESKTOPS) <(echo "$USED" | sort -n) | head -n 1)
 
-i3-msg workspace "${EMPTY_WORKSPACE}"
+[[ -n "$EMPTY_WORKSPACE" ]] && i3-msg workspace "${EMPTY_WORKSPACE}"
