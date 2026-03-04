@@ -1,0 +1,56 @@
+#!/bin/bash
+# Battery monitor for polybar (tail mode)
+# - Red below 30%
+# - Blinks below 15%
+# - Alerts at 15, 10, 8, 6, 4, 2%
+
+BATTERY="BAT0"
+ALERT_FILE="/tmp/polybar-battery-alerts"
+
+get_icon() {
+    local cap=$1 status=$2
+    if [[ "$status" == "Charging" ]]; then
+        echo "󰂄"
+        return
+    fi
+    if (( cap >= 80 )); then echo "󰁹"
+    elif (( cap >= 60 )); then echo "󰂀"
+    elif (( cap >= 40 )); then echo "󰁾"
+    elif (( cap >= 20 )); then echo "󰁼"
+    else echo "󰁺"
+    fi
+}
+
+while true; do
+    capacity=$(cat "/sys/class/power_supply/$BATTERY/capacity")
+    status=$(cat "/sys/class/power_supply/$BATTERY/status")
+    icon=$(get_icon "$capacity" "$status")
+
+    # Reset alert tracking when charging
+    [[ "$status" == "Charging" || "$status" == "Full" ]] && rm -f "$ALERT_FILE"
+
+    if [[ "$status" == "Charging" || "$status" == "Full" ]]; then
+        echo "%{F#FFB347}$icon $capacity%%{F-}"
+        sleep 30
+    elif (( capacity <= 15 )); then
+        # Send alert at thresholds
+        for t in 15 10 8 6 4 2; do
+            if (( capacity <= t )) && ! grep -qx "$t" "$ALERT_FILE" 2>/dev/null; then
+                notify-send -u critical "Battery Low" "Battery at ${capacity}%!"
+                echo "$t" >> "$ALERT_FILE"
+                break
+            fi
+        done
+        # Blink: alternate between red and invisible
+        echo "%{F#f45070}$icon $capacity%%{F-}"
+        sleep 1
+        echo "%{F#282c34}$icon $capacity%%{F-}"
+        sleep 1
+    elif (( capacity <= 30 )); then
+        echo "%{F#f45070}$icon $capacity%%{F-}"
+        sleep 30
+    else
+        echo "%{F#FFB347}$icon $capacity%%{F-}"
+        sleep 30
+    fi
+done
