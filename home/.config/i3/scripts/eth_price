@@ -5,7 +5,7 @@ data=$(curl -sf --max-time 5 \
   'https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd&include_24hr_change=true')
 
 if [ $? -ne 0 ] || [ -z "$data" ]; then
-    echo "Ξ --"
+    echo $'\ued58 --'
     exit 0
 fi
 
@@ -28,4 +28,4 @@ else
     color="#f45070"
 fi
 
-echo "%{F$color}Ξ $formatted_price (${formatted_change}%)%{F-}"
+echo "%{F$color}$(printf '\ued58') $formatted_price (${formatted_change}%)%{F-}"
