@@ -297,7 +297,8 @@ exec --no-startup-id /usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1
 exec --no-startup-id dex --autostart --environment i3
 exec --no-startup-id setxkbmap -layout 'us,ru' -option 'grp:alt_caps_toggle'
 exec --no-startup-id ~/.screenlayout/monitor.sh
-exec --no-startup-id sleep 1 && feh --bg-fill /usr/share/endeavouros/backgrounds/endeavouros-wallpaper.png
+exec --no-startup-id sleep 1 && ~/.config/i3/scripts/random-wallpaper
+exec --no-startup-id bash -c 'while true; do sleep 3600; ~/.config/i3/scripts/random-wallpaper; done'
 exec --no-startup-id xset s 480 dpms 600 600 600
 exec --no-startup-id xautolock -time 10 -locker "~/.config/i3/scripts/blur-lock"
 exec --no-startup-id /usr/bin/dunst

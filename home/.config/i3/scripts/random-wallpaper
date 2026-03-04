@@ -1,0 +1,10 @@
+#!/bin/bash
+# Pick a random wallpaper from ~/Pictures/wallpapers and set it with feh
+
+WALLPAPER_DIR="$HOME/Pictures/wallpapers"
+
+mapfile -t walls < <(find "$WALLPAPER_DIR" -maxdepth 1 -type f \( -name '*.jpg' -o -name '*.png' \))
+[[ ${#walls[@]} -eq 0 ]] && exit 0
+
+pick="${walls[RANDOM % ${#walls[@]}]}"
+feh --bg-fill "$pick"
