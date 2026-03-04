@@ -10,7 +10,17 @@ ALERT_FILE="/tmp/polybar-battery-alerts"
 get_icon() {
     local cap=$1 status=$2
     if [[ "$status" == "Charging" ]]; then
-        echo "󰂄"
+        if (( cap >= 90 )); then echo "󰂊"
+        elif (( cap >= 80 )); then echo "󰂉"
+        elif (( cap >= 70 )); then echo "󰢞"
+        elif (( cap >= 60 )); then echo "󰂈"
+        elif (( cap >= 50 )); then echo "󰢝"
+        elif (( cap >= 40 )); then echo "󰂇"
+        elif (( cap >= 30 )); then echo "󰂆"
+        elif (( cap >= 20 )); then echo "󰢜"
+        elif (( cap >= 10 )); then echo "󰂅"
+        else echo "󰂌"
+        fi
         return
     fi
     if (( cap >= 80 )); then echo "󰁹"
