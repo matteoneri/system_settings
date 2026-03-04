@@ -329,6 +329,7 @@ for_window [class="Bluetooth-sendto" instance="bluetooth-sendto"] floating enabl
 for_window [class="Pamac-manager"] floating enable
 for_window [class="obsidian"] floating enable
 for_window [class="pcloud"] floating enable
+for_window [class="thunar" instance="thunar"] floating enable
 for_window [window_role="About"] floating enable
 
 ######################################
