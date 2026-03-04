@@ -339,9 +339,7 @@ for_window [window_role="About"] floating enable
 set $bg		#282c34
 set $bgalt		#363a42
 set $amber		#FFB347
-set $alert		#FFE8C0
 set $white		#ffffff
-set $black		#000000
 set $grey		#b0b5bd
 set $disabled		#a67520
 

@@ -31,11 +31,9 @@ export ANDROID_HOME="$HOME/Android/Sdk"
 export PATH="$PATH:$ANDROID_HOME/emulator"
 export PATH="$PATH:$ANDROID_HOME/platform-tools"
 export PATH="$PATH:$ANDROID_HOME/cmdline-tools/latest/bin"
-export PATH="$PATH:$ANDROID_HOME/tools"
-export PATH="$PATH:$ANDROID_HOME/tools/bin"
 
 # zkstack completion
-source "$HOME/.zsh/completion/_zkstack.zsh"
+[[ -f "$HOME/.zsh/completion/_zkstack.zsh" ]] && source "$HOME/.zsh/completion/_zkstack.zsh"
 
 # Claude CLI account auto-switch based on project directory
 claude() {
@@ -136,7 +134,7 @@ _settings_sync_check() {
                 if [[ "$answer2" =~ [yY] ]]; then
                     git -C "$sync_dir" add -A
                     git -C "$sync_dir" commit -m "Auto-sync $(date +%Y-%m-%d)"
-                    git -C "$sync_dir" push 2>/dev/null || echo "No remote configured, skipping push."
+                    git -C "$sync_dir" push
                 fi
             else
                 echo "No changes detected."
