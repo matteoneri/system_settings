@@ -2,7 +2,7 @@
 
 CACHE_FILE="/tmp/polybar-gcal-cache"
 MAX_TITLE_LEN=30
-CACHE_MAX_AGE=1800  # 30 minutes
+CACHE_MAX_AGE=600  # 10 minutes
 
 # Force refresh if called with --force
 force=0
