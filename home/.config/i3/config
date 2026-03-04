@@ -513,9 +513,9 @@ set $disabled		#a67520
 # define colors for windows:
 #class		        	border		bground		text		indicator	child_border
 client.focused		    	$amber		$amber		$bg		$amber		$amber
-client.unfocused	    	$alert		$alert		$bg		$bgalt		$bgalt
-client.focused_inactive		$alert		$alert		$bg		$bgalt		$bgalt
-client.urgent		    	$alert		$alert		$bg		$amber		$alert
+client.unfocused	    	$bgalt		$bgalt		$grey		$bgalt		$bgalt
+client.focused_inactive		$disabled	$disabled	$bg		$disabled	$disabled
+client.urgent		    	#f45070		#f45070		$white		#f45070		#f45070
 
 ######################
 # bar settings:      #
@@ -524,36 +524,6 @@ client.urgent		    	$alert		$alert		$bg		$amber		$alert
 # Launch polybar
 exec_always --no-startup-id ~/.config/polybar/launch.sh
 
-# you can add different bars for multidisplay setups on each display:
-# set output HDMI-0 to the display you want the bar, --transparency can be set.
-# Transparency needs rgba color codes to be used where the last two letters are the transparency factor see here:
-# https://gist.github.com/lopspower/03fb1cc0ac9f32ef38f4
-# #08052be6 --> e6=90%
-
-# bar {
-#	font pango: JetBrainsMono Nerd Font 10
-#	status_command i3blocks -c ~/.config/i3/i3blocks-2.conf
-#	i3bar_command i3bar --transparency
-#	output HDMI-0
-#	position bottom
-#
-# When strip_workspace_numbers is set to yes,
-# any workspace that has a name of the form
-# “[n][:][NAME]” will display only the name.
-#strip_workspace_numbers yes
-##strip_workspace_name no
-#
-#	colors {
-#		separator          $purple
-#		background         $darkbluetrans
-#        	statusline         $white
-#					border		bg		txt		indicator
-#		focused_workspace	$lighterblue	$lighterblue	$darkblue	$purple
-#		active_workspace	$lightdblue	$lightdblue	$darkblue	$purple
-#		inactive_workspace	$darkblue	$darkblue	$lightdblue	$purple
-#		urgent_workspace	$urgentred	$urgentred	$white		$purple
-#	}
-#}
 
 #####################################
 # Application menu handled by rofi: #
