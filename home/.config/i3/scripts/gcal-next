@@ -1,7 +1,6 @@
 #!/bin/bash
 
 CACHE_FILE="/tmp/polybar-gcal-cache"
-INDEX_FILE="/tmp/polybar-gcal-index"
 MAX_TITLE_LEN=30
 CACHE_MAX_AGE=1800  # 30 minutes
 
@@ -61,12 +60,8 @@ mapfile -t events < <(
 # No events: output nothing
 [[ ${#events[@]} -eq 0 ]] && exit 0
 
-# Read and increment rotation index
-index=0
-[[ -f "$INDEX_FILE" ]] && index=$(cat "$INDEX_FILE")
-index=$(( index % ${#events[@]} ))
-
-event="${events[$index]}"
+# Always show the first (nearest) non-ended event
+event="${events[0]}"
 
 # Truncate title if too long (keep "HH:MM " prefix intact)
 time_part="${event%% *}"
@@ -76,6 +71,3 @@ if (( ${#title_part} > MAX_TITLE_LEN )); then
 fi
 
 echo "${time_part} ${title_part}"
-
-# Write next index
-echo $(( index + 1 )) > "$INDEX_FILE"
