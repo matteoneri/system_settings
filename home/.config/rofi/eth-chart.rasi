@@ -12,10 +12,6 @@ window {
     location: center;
 }
 
-mainbox {
-    children: [message];
-}
-
 inputbar {
     enabled: false;
 }
