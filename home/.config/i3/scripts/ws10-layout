@@ -7,9 +7,12 @@ i3-msg 'workspace number 10'
 
 telegram-desktop &
 
-# Wait for Telegram window to appear before setting layout
+# Wait for Telegram window to appear before setting layout (30s timeout)
+tries=0
 while ! i3-msg -t get_tree | jq -e '.. | objects | select(.window_properties?.class == "TelegramDesktop")' &>/dev/null; do
     sleep 0.5
+    tries=$((tries + 1))
+    (( tries >= 60 )) && break
 done
 
 i3-msg 'layout tabbed'

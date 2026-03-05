@@ -13,16 +13,16 @@ price=$(echo "$data" | jq -r '.ethereum.usd')
 change=$(echo "$data" | jq -r '.ethereum.usd_24h_change')
 
 # Format price (no decimals above 1000, 2 decimals below)
-formatted_price=$(awk "BEGIN {
-    if ($price >= 1000) printf \"%.0f\", $price
-    else printf \"%.2f\", $price
-}")
+formatted_price=$(awk -v p="$price" 'BEGIN {
+    if (p >= 1000) printf "%.0f", p
+    else printf "%.2f", p
+}')
 
 # Format change percentage
-formatted_change=$(awk "BEGIN { printf \"%+.1f\", $change }")
+formatted_change=$(awk -v c="$change" 'BEGIN { printf "%+.1f", c }')
 
 # Color based on 24h change
-if (( $(awk "BEGIN { print ($change >= 0) }") )); then
+if (( $(awk -v c="$change" 'BEGIN { print (c >= 0) }') )); then
     color="#5eeaa0"
 else
     color="#f45070"

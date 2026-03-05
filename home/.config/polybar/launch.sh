@@ -17,9 +17,6 @@ done
 (exec -a polybar-gcal-refresh bash -c '
 sleep 15
 polybar-msg action "#gcal.hook.1"
-# Retry once more after 30s in case network was not ready
-sleep 30
-polybar-msg action "#gcal.hook.0"
 last=$(date +%s)
 while true; do
     sleep 300
