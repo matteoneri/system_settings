@@ -2,12 +2,26 @@
 
 # Fetch 24h ETH/USD price history and display as ASCII sparkline in rofi
 
-data=$(curl -sf --max-time 10 \
-  'https://api.coingecko.com/api/v3/coins/ethereum/market_chart?vs_currency=usd&days=1')
+CACHE=/tmp/eth_chart_cache.json
+MAX_AGE=300  # 5 minutes
 
-if [ $? -ne 0 ] || [ -z "$data" ]; then
-    rofi -e "Failed to fetch ETH price data" -theme ~/.config/rofi/eth-chart.rasi
-    exit 0
+# Use cache if fresh enough
+if [ -f "$CACHE" ] && [ $(($(date +%s) - $(stat -c %Y "$CACHE"))) -lt $MAX_AGE ]; then
+    data=$(cat "$CACHE")
+else
+    data=$(curl -sf --max-time 10 \
+      'https://api.coingecko.com/api/v3/coins/ethereum/market_chart?vs_currency=usd&days=1')
+    if [ $? -ne 0 ] || [ -z "$data" ]; then
+        # Fall back to stale cache if available
+        if [ -f "$CACHE" ]; then
+            data=$(cat "$CACHE")
+        else
+            rofi -e "Failed to fetch ETH price data" -theme ~/.config/rofi/eth-chart.rasi
+            exit 0
+        fi
+    else
+        echo "$data" > "$CACHE"
+    fi
 fi
 
 # Extract prices, downsample to ~60 points, build sparkline
