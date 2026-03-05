@@ -246,8 +246,11 @@ bindsym Print exec --no-startup-id scrot ~/Screenshots/%Y-%m-%d_%H%M%S.png && no
 bindsym Shift+Print exec --no-startup-id scrot -s ~/Screenshots/%Y-%m-%d_%H%M%S.png && notify-send "Screenshot saved"
 bindsym Ctrl+Print exec --no-startup-id peek
 
+# Pomodoro timer (toggle on/off)
+bindsym $mod+Shift+p exec --no-startup-id ~/.config/i3/scripts/pomodoro
+
 # Power Profiles menu switcher (rofi)
-bindsym $mod+Shift+p exec --no-startup-id ~/.config/i3/scripts/power-profiles
+bindsym $mod+Shift+o exec --no-startup-id ~/.config/i3/scripts/power-profiles
 
 ##########################################
 # configuration for workspace behaviour: #
