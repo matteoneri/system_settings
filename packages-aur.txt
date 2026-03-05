@@ -53,4 +53,5 @@ trezor-udev
 tzupdate
 unionfs-fuse
 visual-studio-code-bin
+xautolock
 zoho-mail-desktop

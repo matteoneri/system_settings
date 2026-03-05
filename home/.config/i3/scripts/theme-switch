@@ -1,0 +1,64 @@
+#!/bin/bash
+# Day/Night theme switcher
+# Day (9am-6pm): Amber    Night (6pm-9am): Light Blue
+
+HOUR=$(date +%H)
+if (( HOUR >= 9 && HOUR < 18 )); then
+    MODE="day"
+else
+    MODE="night"
+fi
+
+STATE_FILE="/tmp/theme-current"
+[[ -f "$STATE_FILE" ]] && [[ "$(cat "$STATE_FILE")" == "$MODE" ]] && exit 0
+
+# Day/Night palettes
+if [[ "$MODE" == "day" ]]; then
+    PRIMARY="#FFB347"
+    ALERT="#FFE8C0"
+    DISABLED="#a67520"
+    CURSOR="Bibata-Modern-Amber"
+    WALLPAPER="$HOME/Pictures/wallpapers/wall_day.png"
+else
+    PRIMARY="#61afef"
+    ALERT="#b4d7ff"
+    DISABLED="#3b6ea5"
+    CURSOR="Bibata-Modern-Ice"
+    WALLPAPER="$HOME/Pictures/wallpapers/wall_night.jpg"
+fi
+
+# 1. Write color state file for other scripts
+echo "$PRIMARY" > ~/.config/theme/current
+
+# 2. Write polybar colors
+cat > ~/.config/polybar/colors.ini <<EOF
+foreground = ${PRIMARY}
+primary = ${PRIMARY}
+alert = ${ALERT}
+disabled = ${DISABLED}
+EOF
+
+# 3. Write rofi theme override
+cat > ~/.config/rofi/theme-colors.rasi <<EOF
+* {
+    primary: ${PRIMARY};
+}
+EOF
+
+# 4. Set wallpaper
+feh --bg-fill "$WALLPAPER"
+
+# 5. Set i3 border colors
+i3-msg "client.focused $PRIMARY $PRIMARY #282c34 $PRIMARY $PRIMARY" >/dev/null 2>&1
+i3-msg "client.focused_inactive $DISABLED $DISABLED #282c34 $DISABLED $DISABLED" >/dev/null 2>&1
+
+# 6. Set cursor theme
+sed -i "s/^Xcursor\.theme:.*/Xcursor.theme: $CURSOR/" ~/.Xresources
+xrdb -merge ~/.Xresources
+xsetroot -cursor_name left_ptr
+
+# 7. Restart polybar
+~/.config/polybar/launch.sh &
+
+# Mark state
+echo "$MODE" > "$STATE_FILE"

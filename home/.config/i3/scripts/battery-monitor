@@ -39,8 +39,9 @@ while true; do
     # Reset alert tracking when charging
     [[ "$status" == "Charging" || "$status" == "Full" ]] && rm -f "$ALERT_FILE"
 
+    ACCENT=$(cat ~/.config/theme/current 2>/dev/null || echo "#FFB347")
     if [[ "$status" == "Charging" || "$status" == "Full" ]]; then
-        echo "%{F#FFB347}$icon $capacity%%{F-}"
+        echo "%{F${ACCENT}}$icon $capacity%%{F-}"
         sleep 30
     elif (( capacity <= 20 )); then
         # Send alert at thresholds
@@ -70,7 +71,7 @@ while true; do
         echo "%{F#f45070}$icon $capacity%%{F-}"
         sleep 30
     else
-        echo "%{F#FFB347}$icon $capacity%%{F-}"
+        echo "%{F${ACCENT}}$icon $capacity%%{F-}"
         sleep 30
     fi
 done
