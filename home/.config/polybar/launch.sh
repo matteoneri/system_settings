@@ -12,3 +12,7 @@ for m in $(xrandr --query | grep " connected" | cut -d" " -f1); do
     MONITOR=$m polybar main 2>&1 | tee -a /tmp/polybar-$m.log & disown
 done
 
+# Periodic disk space check (every 5 min)
+pkill -f "disk-alert-loop" 2>/dev/null
+(exec -a disk-alert-loop bash -c 'while true; do ~/.config/i3/scripts/disk-alert; sleep 300; done') &>/dev/null & disown
+

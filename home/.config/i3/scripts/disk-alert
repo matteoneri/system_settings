@@ -1,0 +1,27 @@
+#!/bin/bash
+# Check disk space on / and /home, alert when critically low
+# Run periodically (e.g., every 5 min from polybar or cron)
+
+THRESHOLD=90  # percentage
+ALERT_DIR="/tmp/disk-alerts"
+mkdir -p "$ALERT_DIR"
+
+for mount in / /home; do
+    pct=$(df "$mount" --output=pcent | tail -1 | tr -d ' %')
+    avail=$(df -h "$mount" --output=avail | tail -1 | tr -d ' ')
+    name=$(echo "$mount" | tr '/' '_')
+    [[ "$name" == "_" ]] && name="_root"
+    flag="$ALERT_DIR/$name"
+
+    if (( pct >= THRESHOLD )) && [[ ! -f "$flag" ]]; then
+        touch "$flag"
+        if [[ "$mount" == "/" ]]; then
+            label="ROOT DISK ${pct}% FULL"
+        else
+            label="HOME DISK ${pct}% FULL"
+        fi
+        ~/.config/i3/scripts/fullscreen-alert "$label" "${avail} REMAINING" &
+    elif (( pct < THRESHOLD )); then
+        rm -f "$flag"
+    fi
+done

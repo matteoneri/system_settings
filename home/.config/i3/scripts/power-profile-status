@@ -1,0 +1,32 @@
+#!/bin/bash
+# Polybar module: show current power profile, click to cycle
+
+ACTION="${1:-}"
+
+get_profile() {
+    busctl get-property net.hadess.PowerProfiles \
+        /net/hadess/PowerProfiles net.hadess.PowerProfiles ActiveProfile 2>/dev/null \
+        | cut -d'"' -f2
+}
+
+set_profile() {
+    busctl set-property net.hadess.PowerProfiles \
+        /net/hadess/PowerProfiles net.hadess.PowerProfiles ActiveProfile s "$1" 2>/dev/null
+}
+
+if [[ "$ACTION" == "cycle" ]]; then
+    current=$(get_profile)
+    case "$current" in
+        power-saver) set_profile balanced ;;
+        balanced)    set_profile performance ;;
+        performance) set_profile power-saver ;;
+    esac
+fi
+
+profile=$(get_profile)
+case "$profile" in
+    power-saver)  echo "󰌪" ;;
+    balanced)     echo "󰗑" ;;
+    performance)  echo "󰓅" ;;
+    *)            echo "?" ;;
+esac
