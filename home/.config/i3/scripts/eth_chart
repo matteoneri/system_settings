@@ -24,49 +24,24 @@ else
     fi
 fi
 
-# Extract prices, downsample, build multi-row chart
+# Build chart with plotext
 chart=$(echo "$data" | python3 -c '
-import json, sys
+import json, sys, plotext as plt
 
 data = json.load(sys.stdin)
 prices = [p[1] for p in data["prices"]]
+hours = [i * 24 / (len(prices) - 1) for i in range(len(prices))]
 
-COLS = 40
-ROWS = 16
+plt.plot(hours, prices)
+plt.title("ETH/USD 24h")
+plt.xlabel("hours ago")
+plt.plotsize(60, 20)
+plt.theme("clear")
+plt.xlim(0, 24)
+plt.xticks([0, 6, 12, 18, 24], ["24", "18", "12", "6", "now"])
 
-n = len(prices)
-step = max(1, n // COLS)
-sampled = [prices[i] for i in range(0, n, step)][:COLS]
-
-lo, hi = min(sampled), max(sampled)
-span = hi - lo if hi != lo else 1
-partials = " ▁▂▃▄▅▆▇"
-full = "█"
-
-# Normalize each value to 0..ROWS*8 (sub-cell precision)
-heights = [int((p - lo) / span * ROWS * 8) for p in sampled]
-
-lines = []
-for row in range(ROWS, 0, -1):
-    threshold = row * 8
-    line = ""
-    for h in heights:
-        if h >= threshold:
-            line += full
-        elif h > threshold - 8:
-            line += partials[h - (threshold - 8)]
-        else:
-            line += " "
-    lines.append(line)
-
-fmt = lambda v: f"{v:,.0f}" if v >= 1000 else f"{v:.2f}"
-
-print(f"ETH/USD 24h  ·  \${fmt(lo)} \u2013 \${fmt(hi)}")
-print()
-for l in lines:
-    print(l)
-print()
-print("24h ago                      now")
+import re
+print(re.sub(r"\x1b\[[0-9;]*m", "", plt.build()))
 ')
 
 rofi -e "$chart" -theme ~/.config/rofi/eth-chart.rasi
