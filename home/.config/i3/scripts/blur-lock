@@ -1,6 +1,6 @@
-#!/usr/bin/env bash
+#!/bin/bash
 
-PICTURE=/tmp/i3lock.png
+PICTURE=$(mktemp /tmp/i3lock.XXXXXX.png)
 BLUR="5x4"
 
 if scrot -z "$PICTURE" && convert "$PICTURE" -blur "$BLUR" "$PICTURE"; then

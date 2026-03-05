@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 step=10
 
@@ -8,4 +8,4 @@ case "$1" in
     *)    exit 1 ;;
 esac
 
-notify-send "Brightness - $(brightnessctl -m | cut -d',' -f4)"
+dunstify -t 1000 -r 2594 "Brightness - $(brightnessctl -m | cut -d',' -f4)"

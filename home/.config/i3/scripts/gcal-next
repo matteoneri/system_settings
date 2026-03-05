@@ -127,7 +127,7 @@ while true; do
     fi
 
     # 5-minute fullscreen alert (once per meeting)
-    alert_flag="$ALERT_DIR/$start_time"
+    alert_flag="$ALERT_DIR/${start_time}_$(echo "$full_title" | md5sum | cut -c1-8)"
     if (( diff > 0 && diff <= ALERT_MINUTES )) && [[ ! -f "$alert_flag" ]]; then
         touch "$alert_flag"
         ~/.config/i3/scripts/fullscreen-alert "$full_title" "IN ${diff} MINUTES!" &

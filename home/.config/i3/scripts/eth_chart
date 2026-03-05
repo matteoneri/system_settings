@@ -25,25 +25,27 @@ else
 fi
 
 # Build chart with plotext
-python3 -c '
-import json, re, plotext as plt
+RENDER=/tmp/eth_chart_render.txt
 
-with open("/tmp/eth_chart_cache.json") as f:
+python3 -c "
+import json, re, sys, plotext as plt
+
+with open(sys.argv[1]) as f:
     data = json.load(f)
 
-prices = [p[1] for p in data["prices"]]
+prices = [p[1] for p in data['prices']]
 hours = [i * 24 / (len(prices) - 1) for i in range(len(prices))]
 
 plt.plot(hours, prices)
-plt.title("ETH/USD 24h")
-plt.xlabel("hours ago")
+plt.title('ETH/USD 24h')
+plt.xlabel('hours ago')
 plt.plotsize(60, 20)
-plt.theme("clear")
+plt.theme('clear')
 plt.xlim(0, 24)
-plt.xticks([0, 6, 12, 18, 24], ["24", "18", "12", "6", "now"])
+plt.xticks([0, 6, 12, 18, 24], ['24', '18', '12', '6', 'now'])
 
-with open("/tmp/eth_chart_render.txt", "w") as f:
-    f.write(re.sub(r"\x1b\[[0-9;]*m", "", plt.build()))
-'
+with open(sys.argv[2], 'w') as f:
+    f.write(re.sub(r'\x1b\[[0-9;]*m', '', plt.build()))
+" "$CACHE" "$RENDER"
 
-rofi -e "$(cat /tmp/eth_chart_render.txt)" -theme ~/.config/rofi/eth-chart.rasi
+rofi -e "$(cat "$RENDER")" -theme ~/.config/rofi/eth-chart.rasi

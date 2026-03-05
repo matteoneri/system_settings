@@ -33,7 +33,8 @@ case $1 in
     volume_up)
     pactl set-sink-mute @DEFAULT_SINK@ 0
     volume=$(get_volume)
-    if [ $(( "$volume" + "$volume_step" )) -gt $max_volume ]; then
+    volume=${volume:-0}
+    if [ $(( volume + volume_step )) -gt $max_volume ]; then
         pactl set-sink-volume @DEFAULT_SINK@ $max_volume%
     else
         pactl set-sink-volume @DEFAULT_SINK@ +$volume_step%
