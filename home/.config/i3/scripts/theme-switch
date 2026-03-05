@@ -3,7 +3,10 @@
 # Day (9am-6pm): Amber    Night (6pm-9am): Light Blue
 # Usage: theme-switch [day|night]  — argument forces mode, otherwise uses clock
 
-if [[ "$1" == "day" || "$1" == "night" ]]; then
+if [[ "$1" == "toggle" ]]; then
+    PREV=$(cat /tmp/theme-current 2>/dev/null)
+    [[ "$PREV" == "day" ]] && MODE="night" || MODE="day"
+elif [[ "$1" == "day" || "$1" == "night" ]]; then
     MODE="$1"
 else
     HOUR=$(date +%H)
@@ -69,6 +72,14 @@ Inherits=$CURSOR
 EOF
 xsetroot -cursor_name left_ptr
 
-# 7. Reload i3 (picks up theme-colors include + exec_always restarts polybar)
+# 7. Update dunst frame color and restart
+sed -i '/frame_color/{s/"#FFB347"/"'"$PRIMARY"'"/;s/"#61afef"/"'"$PRIMARY"'"/;}' ~/.config/dunst/dunstrc
+killall dunst 2>/dev/null
+/usr/bin/dunst & disown
+
+# 8. Reload i3 (picks up theme-colors include + exec_always restarts polybar)
 echo "$MODE" > "$STATE_FILE"
 i3-msg reload >/dev/null 2>&1
+
+# 9. Notify (after dunst + i3 reload so notification uses new colors)
+[[ -n "$1" ]] && sleep 0.5 && notify-send -t 2000 "Theme" "Switched to $MODE mode"
