@@ -17,9 +17,9 @@ set_profile() {
 if [[ "$ACTION" == "cycle" ]]; then
     current=$(get_profile)
     case "$current" in
-        power-saver) set_profile balanced ;;
-        balanced)    set_profile performance ;;
-        performance) set_profile power-saver ;;
+        power-saver) set_profile balanced; notify-send -t 2000 "Power Profile" "Balanced" ;;
+        balanced)    set_profile performance; notify-send -t 2000 "Power Profile" "Performance" ;;
+        performance) set_profile power-saver; notify-send -t 2000 "Power Profile" "Power Saver" ;;
     esac
 fi
 
