@@ -1,0 +1,46 @@
+#!/bin/bash
+
+# Fetch 24h ETH/USD price history and display as ASCII sparkline in rofi
+
+data=$(curl -sf --max-time 10 \
+  'https://api.coingecko.com/api/v3/coins/ethereum/market_chart?vs_currency=usd&days=1')
+
+if [ $? -ne 0 ] || [ -z "$data" ]; then
+    rofi -e "Failed to fetch ETH price data" -theme ~/.config/rofi/eth-chart.rasi
+    exit 0
+fi
+
+# Extract prices, downsample to ~60 points, build sparkline
+chart=$(echo "$data" | python3 -c '
+import json, sys
+
+data = json.load(sys.stdin)
+prices = [p[1] for p in data["prices"]]
+
+# Downsample to 60 points
+n = len(prices)
+step = max(1, n // 60)
+sampled = [prices[i] for i in range(0, n, step)][:60]
+
+lo, hi = min(sampled), max(sampled)
+blocks = "▁▂▃▄▅▆▇█"
+
+if hi == lo:
+    sparkline = blocks[4] * len(sampled)
+else:
+    sparkline = ""
+    for p in sampled:
+        idx = int((p - lo) / (hi - lo) * 7.999)
+        idx = min(idx, 7)
+        sparkline += blocks[idx]
+
+fmt = lambda v: f"{v:,.0f}" if v >= 1000 else f"{v:.2f}"
+
+print(f"ETH/USD 24h  ·  ${fmt(lo)} – ${fmt(hi)}")
+print()
+print(sparkline)
+print()
+print("24h ago                              now")
+')
+
+rofi -e "$chart" -theme ~/.config/rofi/eth-chart.rasi
