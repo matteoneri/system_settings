@@ -8,25 +8,6 @@ configuration {
 
 window {
     width:    900px;
-    height:   580px;
+    height:   720px;
     location: center;
-}
-
-inputbar {
-    enabled: false;
-}
-
-listview {
-    enabled: false;
-}
-
-message {
-    background-color: transparent;
-    padding:          0;
-}
-
-textbox {
-    background-color: transparent;
-    text-color:       #FFB347;
-    padding:          4px 0;
 }
