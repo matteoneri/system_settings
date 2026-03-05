@@ -1,16 +1,21 @@
 #!/bin/bash
 # Day/Night theme switcher
 # Day (9am-6pm): Amber    Night (6pm-9am): Light Blue
+# Usage: theme-switch [day|night]  — argument forces mode, otherwise uses clock
 
-HOUR=$(date +%H)
-if (( HOUR >= 9 && HOUR < 18 )); then
-    MODE="day"
+if [[ "$1" == "day" || "$1" == "night" ]]; then
+    MODE="$1"
 else
-    MODE="night"
+    HOUR=$(date +%H)
+    if (( HOUR >= 9 && HOUR < 18 )); then
+        MODE="day"
+    else
+        MODE="night"
+    fi
 fi
 
 STATE_FILE="/tmp/theme-current"
-[[ -f "$STATE_FILE" ]] && [[ "$(cat "$STATE_FILE")" == "$MODE" ]] && exit 0
+[[ -z "$1" ]] && [[ -f "$STATE_FILE" ]] && [[ "$(cat "$STATE_FILE")" == "$MODE" ]] && exit 0
 
 # Day/Night palettes
 if [[ "$MODE" == "day" ]]; then
@@ -48,17 +53,22 @@ EOF
 # 4. Set wallpaper
 feh --bg-fill "$WALLPAPER"
 
-# 5. Set i3 border colors
-i3-msg "client.focused $PRIMARY $PRIMARY #282c34 $PRIMARY $PRIMARY" >/dev/null 2>&1
-i3-msg "client.focused_inactive $DISABLED $DISABLED #282c34 $DISABLED $DISABLED" >/dev/null 2>&1
+# 5. Write i3 theme-colors include (border colors)
+cat > ~/.config/i3/theme-colors <<EOF
+client.focused          ${PRIMARY} ${PRIMARY} #282c34 ${PRIMARY} ${PRIMARY}
+client.focused_inactive ${DISABLED} ${DISABLED} #282c34 ${DISABLED} ${DISABLED}
+EOF
 
 # 6. Set cursor theme
 sed -i "s/^Xcursor\.theme:.*/Xcursor.theme: $CURSOR/" ~/.Xresources
 xrdb -merge ~/.Xresources
+mkdir -p ~/.icons/default
+cat > ~/.icons/default/index.theme <<EOF
+[Icon Theme]
+Inherits=$CURSOR
+EOF
 xsetroot -cursor_name left_ptr
 
-# 7. Restart polybar
-~/.config/polybar/launch.sh &
-
-# Mark state
+# 7. Reload i3 (picks up theme-colors include + exec_always restarts polybar)
 echo "$MODE" > "$STATE_FILE"
+i3-msg reload >/dev/null 2>&1

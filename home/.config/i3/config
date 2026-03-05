@@ -237,6 +237,7 @@ bindsym $mod+p exec --no-startup-id ~/.config/i3/scripts/switch-audio-port
 
 ## App shortcuts
 bindsym $mod+w exec --no-startup-id ~/.config/i3/scripts/random-wallpaper
+bindsym $mod+Shift+w exec --no-startup-id ~/.config/i3/scripts/theme-switch day
 bindsym $mod+b exec --no-startup-id brave
 bindsym $mod+Shift+b exec --no-startup-id firefox
 bindsym $mod+n exec --no-startup-id ~/.config/i3/scripts/yazi-launch
@@ -320,16 +321,12 @@ for_window [instance="i3-alert"] floating enable, border none, fullscreen enable
 # Define colors variables:
 set $bg		#282c34
 set $bgalt		#363a42
-set $amber		#FFB347
 set $white		#ffffff
 set $grey		#b0b5bd
-set $disabled		#a67520
 
-# define colors for windows:
-#class		        	border		bground		text		indicator	child_border
-client.focused		    	$amber		$amber		$bg		$amber		$amber
+# define colors for windows (focused/focused_inactive from theme-switch):
+include ~/.config/i3/theme-colors
 client.unfocused	    	$bgalt		$bgalt		$grey		$bgalt		$bgalt
-client.focused_inactive		$disabled	$disabled	$bg		$disabled	$disabled
 client.urgent		    	#f45070		#f45070		$white		#f45070		#f45070
 
 ######################
