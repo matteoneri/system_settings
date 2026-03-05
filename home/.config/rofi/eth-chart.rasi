@@ -7,7 +7,7 @@ configuration {
 @theme "~/.local/share/rofi/themes/one-dark.rasi"
 
 window {
-    width:    700px;
+    width:    780px;
     location: center;
 }
 
