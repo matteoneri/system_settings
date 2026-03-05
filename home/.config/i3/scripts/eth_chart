@@ -24,35 +24,47 @@ else
     fi
 fi
 
-# Extract prices, downsample to ~60 points, build sparkline
+# Extract prices, downsample, build multi-row chart
 chart=$(echo "$data" | python3 -c '
 import json, sys
 
 data = json.load(sys.stdin)
 prices = [p[1] for p in data["prices"]]
 
-# Downsample to 40 points
+COLS = 40
+ROWS = 16
+
 n = len(prices)
-step = max(1, n // 40)
-sampled = [prices[i] for i in range(0, n, step)][:40]
+step = max(1, n // COLS)
+sampled = [prices[i] for i in range(0, n, step)][:COLS]
 
 lo, hi = min(sampled), max(sampled)
-blocks = "▁▂▃▄▅▆▇█"
+span = hi - lo if hi != lo else 1
+partials = " ▁▂▃▄▅▆▇"
+full = "█"
 
-if hi == lo:
-    sparkline = blocks[4] * len(sampled)
-else:
-    sparkline = ""
-    for p in sampled:
-        idx = int((p - lo) / (hi - lo) * 7.999)
-        idx = min(idx, 7)
-        sparkline += blocks[idx]
+# Normalize each value to 0..ROWS*8 (sub-cell precision)
+heights = [int((p - lo) / span * ROWS * 8) for p in sampled]
+
+lines = []
+for row in range(ROWS, 0, -1):
+    threshold = row * 8
+    line = ""
+    for h in heights:
+        if h >= threshold:
+            line += full
+        elif h > threshold - 8:
+            line += partials[h - (threshold - 8)]
+        else:
+            line += " "
+    lines.append(line)
 
 fmt = lambda v: f"{v:,.0f}" if v >= 1000 else f"{v:.2f}"
 
-print(f"ETH/USD 24h  ·  ${fmt(lo)} – ${fmt(hi)}")
+print(f"ETH/USD 24h  ·  \${fmt(lo)} \u2013 \${fmt(hi)}")
 print()
-print(sparkline)
+for l in lines:
+    print(l)
 print()
 print("24h ago                      now")
 ')
