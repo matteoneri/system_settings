@@ -44,10 +44,11 @@ while true; do
         sleep 30
     elif (( capacity <= 15 )); then
         # Send alert at thresholds
-        for t in 15 10 8 6 5 4 2; do
+        for t in 15 10 5; do
             if (( capacity <= t )) && ! grep -qx "$t" "$ALERT_FILE" 2>/dev/null; then
-                notify-send -u critical "Battery Low" "Battery at ${capacity}%!"
-                if (( t == 10 || t == 5 )); then
+                if (( t == 15 )); then
+                    notify-send -u critical "Battery Low" "Battery at ${capacity}%!"
+                else
                     ~/.config/i3/scripts/fullscreen-alert "BATTERY ${capacity}%" "CHARGE NOW!" &
                 fi
                 echo "$t" >> "$ALERT_FILE"
