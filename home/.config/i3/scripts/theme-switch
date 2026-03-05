@@ -77,9 +77,12 @@ sed -i '/frame_color/{s/"#FFB347"/"'"$PRIMARY"'"/;s/"#61afef"/"'"$PRIMARY"'"/;}'
 killall dunst 2>/dev/null
 /usr/bin/dunst & disown
 
-# 8. Reload i3 (picks up theme-colors include + exec_always restarts polybar)
+# 8. Reload i3 (picks up theme-colors include for borders)
 echo "$MODE" > "$STATE_FILE"
 i3-msg reload >/dev/null 2>&1
 
-# 9. Notify (after dunst + i3 reload so notification uses new colors)
-[[ -n "$1" ]] && sleep 0.5 && notify-send -t 2000 "Theme" "Switched to $MODE mode"
+# 9. Restart polybar (reload doesn't re-run exec_always)
+~/.config/polybar/launch.sh &
+
+# 10. Notify (after dunst + reload so notification uses new colors)
+[[ -n "$1" ]] && sleep 1 && notify-send -t 2000 "Theme" "Switched to $MODE mode"
