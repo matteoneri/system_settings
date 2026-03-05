@@ -17,10 +17,10 @@ import json, sys
 data = json.load(sys.stdin)
 prices = [p[1] for p in data["prices"]]
 
-# Downsample to 60 points
+# Downsample to 40 points
 n = len(prices)
-step = max(1, n // 60)
-sampled = [prices[i] for i in range(0, n, step)][:60]
+step = max(1, n // 40)
+sampled = [prices[i] for i in range(0, n, step)][:40]
 
 lo, hi = min(sampled), max(sampled)
 blocks = "▁▂▃▄▅▆▇█"
@@ -40,7 +40,7 @@ print(f"ETH/USD 24h  ·  ${fmt(lo)} – ${fmt(hi)}")
 print()
 print(sparkline)
 print()
-print("24h ago                              now")
+print("24h ago                      now")
 ')
 
 rofi -e "$chart" -theme ~/.config/rofi/eth-chart.rasi
