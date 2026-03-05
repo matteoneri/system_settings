@@ -7,12 +7,21 @@ configuration {
 @theme "~/.local/share/rofi/themes/one-dark.rasi"
 
 window {
-    width:    780px;
+    width:    900px;
+    height:   580px;
     location: center;
 }
 
 mainbox {
     children: [message];
+}
+
+inputbar {
+    enabled: false;
+}
+
+listview {
+    enabled: false;
 }
 
 message {
