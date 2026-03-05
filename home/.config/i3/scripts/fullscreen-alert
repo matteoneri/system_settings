@@ -1,0 +1,59 @@
+#!/bin/bash
+# Fullscreen typewriter alert overlay
+# Usage: fullscreen-alert "Title" "Subtitle"
+
+TITLE="${1:-Alert}"
+SUBTITLE="${2:-}"
+COLOR="#f45070"
+BG="#282c34"
+HOLD=3
+
+kitty --name i3-alert \
+  -o font_size=60 \
+  -o background="$BG" \
+  -o foreground="$COLOR" \
+  -o window_padding_width=0 \
+  -o hide_window_decorations=yes \
+  -o cursor_shape=underline \
+  -o cursor_blink_interval=0 \
+  -e bash -c '
+    title="$1"; subtitle="$2"; hold="$3"
+    sleep 0.3
+    tput civis  # hide cursor
+    clear
+    cols=$(tput cols)
+    lines=$(tput lines)
+    vpad=$(( lines / 2 ))
+
+    typeout() {
+      local text="$1" pad=$(( (cols - ${#1}) / 2 ))
+      tput cup $vpad 0
+      tput el
+      for ((i=0; i<${#text}; i++)); do
+        printf "\r%*s%s" $pad "" "${text:0:i+1}"
+        sleep 0.04
+      done
+    }
+
+    eraseout() {
+      local text="$1" pad=$(( (cols - ${#1}) / 2 ))
+      for ((i=${#text}; i>0; i--)); do
+        printf "\r%*s%s" $pad "" "${text:0:i}"
+        tput el
+        sleep 0.03
+      done
+      printf "\r"; tput el
+    }
+
+    typeout "$title"
+    sleep "$hold"
+    eraseout "$title"
+    sleep 0.3
+    if [[ -n "$subtitle" ]]; then
+      typeout "$subtitle"
+      sleep "$hold"
+      eraseout "$subtitle"
+      sleep 0.3
+    fi
+  ' _ "$TITLE" "$SUBTITLE" "$HOLD" &
+# i3 for_window rule handles floating + fullscreen automatically

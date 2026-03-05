@@ -320,6 +320,7 @@ for_window [class="obsidian"] floating enable
 for_window [class="pcloud"] floating enable
 for_window [class="thunar" instance="thunar"] floating enable
 for_window [window_role="About"] floating enable
+for_window [instance="i3-alert"] floating enable, border none, fullscreen enable
 
 ######################################
 # color settings for bar and windows #
