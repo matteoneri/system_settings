@@ -254,23 +254,13 @@ bindsym $mod+Shift+p exec --no-startup-id ~/.config/i3/scripts/pomodoro
 # configuration for workspace behaviour: #
 ##########################################
 
-set $ws7 "7:󰄪"
-set $ws8 "8:󰓇"
-set $ws9 "9:󰎕"
+set $ws9 "9:󰓇"
 set $ws10 "10:󰍡"
 
 # bind program to workspace and focus to them on startup:
-# Workspace 7: btop
-for_window [class="kitty" instance="btop"] move to workspace $ws7
-exec --no-startup-id kitty --name btop -e btop
-
-# Workspace 8: Spotify
-for_window [class="Spotify"] move to workspace $ws8
-exec --no-startup-id ~/.config/i3/scripts/ws8-layout
-
-# Workspace 9: Newsboat
-for_window [class="kitty" instance="newsboat"] move to workspace $ws9
-exec --no-startup-id ~/.config/i3/scripts/ws9-layout
+# Workspace 9: Spotify
+for_window [class="Spotify"] move to workspace $ws9
+exec --no-startup-id spotify
 
 # Workspace 10: Chat apps (tabbed)
 assign [class="TelegramDesktop"] $ws10

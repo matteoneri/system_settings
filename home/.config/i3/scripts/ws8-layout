@@ -1,8 +1,0 @@
-#!/bin/bash
-# Launch Spotify on workspace 8
-
-sleep 2
-
-i3-msg 'workspace number 8'
-
-spotify &

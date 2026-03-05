@@ -1,8 +1,0 @@
-#!/bin/bash
-# Launch Newsboat on workspace 9
-
-sleep 2
-
-i3-msg 'workspace number 9'
-
-kitty --name newsboat -e newsboat &
