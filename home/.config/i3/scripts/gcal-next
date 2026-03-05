@@ -56,8 +56,10 @@ refresh_cache() {
                 [[ -z "$start_time" || -z "$title" ]] && continue
                 echo "${start_time} ${end_time} ${title}"
             done >> "$CACHE_FILE"
-            local count=$(( $(wc -l < "$CACHE_FILE") - 1 ))
-            notify-send -t 2000 "Calendar" "$count event(s) today"
+            if (( force )); then
+                local count=$(( $(wc -l < "$CACHE_FILE") - 1 ))
+                notify-send -t 2000 "Calendar" "$count event(s) today"
+            fi
         else
             notify-send -t 3000 "Calendar" "Error: $(cat "$CACHE_FILE.err")"
             rm -f "$CACHE_FILE"

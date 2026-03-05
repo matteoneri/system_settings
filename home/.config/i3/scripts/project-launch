@@ -52,7 +52,7 @@ else
 fi
 
 ws_name=$(i3-msg -t get_workspaces | jq -r '.[] | select(.focused) | .name')
-# Only rename plain numeric workspaces (skip 7-10 which have static icons)
+# Only rename plain numeric workspaces (skip 9-10 which have static icons)
 if [[ "$ws_name" =~ ^[0-9]+$ ]]; then
     i3-msg "rename workspace \"$ws_name\" to \"$ws_name:$ws_icon\""
 fi

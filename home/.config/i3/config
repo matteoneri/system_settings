@@ -264,7 +264,7 @@ exec --no-startup-id spotify
 
 # Workspace 10: Chat apps (tabbed)
 assign [class="TelegramDesktop"] $ws10
-assign [class="Signal"] $ws10
+assign [class="Signal Beta"] $ws10
 assign [class="Slack"] $ws10
 exec --no-startup-id ~/.config/i3/scripts/ws10-layout
 
