@@ -2,7 +2,7 @@
 # Battery monitor for polybar (tail mode)
 # - Red below 30%
 # - Blinks below 15%
-# - Alerts at 15, 10, 8, 6, 4, 2%
+# - Alerts at 20, 15 (dunst), 10, 5 (fullscreen)
 
 BATTERY="BAT0"
 ALERT_FILE="/tmp/polybar-battery-alerts"
