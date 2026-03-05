@@ -19,7 +19,7 @@ if [[ -f "$PIDFILE" ]]; then
     rm -f "$PIDFILE"
 fi
 
-notify-send -t 2000 "Pomodoro" "Focus — 25 minutes"
+~/.config/i3/scripts/fullscreen-alert "FOCUS TIME" "25 MINUTES" &
 
 # Daemonize in a new session so it survives parent exit
 setsid bash -c '
