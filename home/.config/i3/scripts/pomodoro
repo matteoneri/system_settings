@@ -2,50 +2,15 @@
 # Pomodoro timer: 25 min focus / 5 min break
 # Toggle on/off by running again
 
-PIDFILE="/tmp/pomodoro.pid"
-SOUND="/usr/share/sounds/freedesktop/stereo/alarm-clock-elapsed.oga"
-FOCUS=1500   # 25 minutes
-BREAK=300    # 5 minutes
+PIDFILE="/tmp/pomodoro-daemon.pid"
 
-# Toggle: if already running, stop it
-if [[ -f "$PIDFILE" ]]; then
-    pid=$(cat "$PIDFILE")
-    if kill -0 "$pid" 2>/dev/null; then
-        kill "$pid" 2>/dev/null
-        rm -f "$PIDFILE"
-        notify-send -t 2000 "Pomodoro" "Stopped"
-        exit 0
-    fi
+# If daemon is running, stop it
+if [[ -f "$PIDFILE" ]] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+    kill -- -"$(cat "$PIDFILE")" 2>/dev/null
     rm -f "$PIDFILE"
+    notify-send -t 2000 "Pomodoro" "Stopped"
+    exit 0
 fi
 
 ~/.config/i3/scripts/fullscreen-alert "FOCUS TIME" "25 MINUTES" &
-
-# Daemonize in a new session so it survives parent exit
-setsid bash -c '
-    echo $$ > "'"$PIDFILE"'"
-    trap "rm -f \"'"$PIDFILE"'\"; exit 0" TERM INT
-
-    SOUND="'"$SOUND"'"
-    FOCUS='"$FOCUS"'
-    BREAK='"$BREAK"'
-
-    play_sound() {
-        for i in 1 2 3; do
-            paplay "$SOUND" &
-            sleep 1
-        done
-    }
-
-    while true; do
-        sleep $FOCUS
-
-        play_sound
-        ~/.config/i3/scripts/fullscreen-alert "BREAK TIME" "5 MINUTES"
-
-        sleep $BREAK
-
-        play_sound
-        ~/.config/i3/scripts/fullscreen-alert "BACK TO WORK" "25 MINUTES"
-    done
-' &>/dev/null &
+setsid ~/.config/i3/scripts/pomodoro-daemon </dev/null >/dev/null 2>&1 &

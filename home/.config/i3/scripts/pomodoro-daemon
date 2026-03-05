@@ -1,0 +1,29 @@
+#!/bin/bash
+# Pomodoro daemon — not called directly, started by pomodoro script
+
+PIDFILE="/tmp/pomodoro-daemon.pid"
+echo $$ > "$PIDFILE"
+trap 'rm -f "$PIDFILE"' EXIT
+
+SOUND="/usr/share/sounds/freedesktop/stereo/alarm-clock-elapsed.oga"
+FOCUS=1500   # 25 minutes
+BREAK=300    # 5 minutes
+
+play_sound() {
+    for i in 1 2 3; do
+        paplay "$SOUND" &
+        sleep 1
+    done
+}
+
+while true; do
+    sleep $FOCUS
+
+    play_sound
+    ~/.config/i3/scripts/fullscreen-alert "BREAK TIME" "5 MINUTES"
+
+    sleep $BREAK
+
+    play_sound
+    ~/.config/i3/scripts/fullscreen-alert "BACK TO WORK" "25 MINUTES"
+done
