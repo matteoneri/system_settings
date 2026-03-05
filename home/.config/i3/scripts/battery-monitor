@@ -42,11 +42,11 @@ while true; do
     if [[ "$status" == "Charging" || "$status" == "Full" ]]; then
         echo "%{F#FFB347}$icon $capacity%%{F-}"
         sleep 30
-    elif (( capacity <= 15 )); then
+    elif (( capacity <= 20 )); then
         # Send alert at thresholds
-        for t in 15 10 5; do
+        for t in 20 15 10 5; do
             if (( capacity <= t )) && ! grep -qx "$t" "$ALERT_FILE" 2>/dev/null; then
-                if (( t == 15 )); then
+                if (( t >= 15 )); then
                     notify-send -u critical "Battery Low" "Battery at ${capacity}%!"
                 else
                     ~/.config/i3/scripts/fullscreen-alert "BATTERY ${capacity}%" "CHARGE NOW!" &
@@ -55,11 +55,17 @@ while true; do
                 break
             fi
         done
-        # Blink: alternate between red and invisible
-        echo "%{F#f45070}$icon $capacity%%{F-}"
-        sleep 1
-        echo "%{F#282c34}$icon $capacity%%{F-}"
-        sleep 1
+        if (( capacity <= 15 )); then
+            # Blink below 15%
+            echo "%{F#f45070}$icon $capacity%%{F-}"
+            sleep 1
+            echo "%{F#282c34}$icon $capacity%%{F-}"
+            sleep 1
+        else
+            # Red but no blink at 16-20%
+            echo "%{F#f45070}$icon $capacity%%{F-}"
+            sleep 30
+        fi
     elif (( capacity <= 30 )); then
         echo "%{F#f45070}$icon $capacity%%{F-}"
         sleep 30
