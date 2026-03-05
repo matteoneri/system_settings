@@ -25,8 +25,10 @@ else
 fi
 
 # Build chart with plotext
-chart=$(echo "$data" | python3 -c '
-import json, sys, plotext as plt
+chartfile=/tmp/eth_chart_render.txt
+
+echo "$data" | python3 -c '
+import json, sys, re, plotext as plt
 
 data = json.load(sys.stdin)
 prices = [p[1] for p in data["prices"]]
@@ -40,8 +42,7 @@ plt.theme("clear")
 plt.xlim(0, 24)
 plt.xticks([0, 6, 12, 18, 24], ["24", "18", "12", "6", "now"])
 
-import re
 print(re.sub(r"\x1b\[[0-9;]*m", "", plt.build()))
-')
+' > "$chartfile"
 
-rofi -e "$chart" -theme ~/.config/rofi/eth-chart.rasi
+rofi -dmenu -mesg "$(cat "$chartfile")" -theme ~/.config/rofi/eth-chart.rasi < /dev/null
