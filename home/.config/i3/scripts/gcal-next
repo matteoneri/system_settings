@@ -31,21 +31,23 @@ fi
 
 if (( refresh )); then
     notify-send -t 2000 "Calendar" "Refreshing..."
-    # First line is the date stamp, rest are events
-    echo "$today" > "$CACHE_FILE"
+    tmpfile=$(mktemp)
     if gcalcli agenda "$today" "$(date -d "$today + 1 day" +%Y-%m-%d)" \
         --cal "Matteo Neri @FNA" --cal "matteo.neri920114@gmail.com" --tsv 2>"$CACHE_FILE.err" \
-        | tail -n +2 \
-        | while IFS=$'\t' read -r start_date start_time end_date end_time title; do
+        > "$tmpfile"; then
+        # Build cache: date stamp on first line, parsed events after
+        echo "$today" > "$CACHE_FILE"
+        tail -n +2 "$tmpfile" | while IFS=$'\t' read -r start_date start_time end_date end_time title; do
             [[ -z "$start_time" || -z "$title" ]] && continue
             echo "${start_time} ${end_time} ${title}"
-        done >> "$CACHE_FILE"; then
+        done >> "$CACHE_FILE"
         count=$(( $(wc -l < "$CACHE_FILE") - 1 ))
         notify-send -t 2000 "Calendar" "$count event(s) today"
     else
         notify-send -t 3000 "Calendar" "Error: $(cat "$CACHE_FILE.err")"
         rm -f "$CACHE_FILE"  # remove broken cache so next call retries
     fi
+    rm -f "$tmpfile"
 fi
 
 # Read events (skip first line which is the date stamp), filter past events
