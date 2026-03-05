@@ -3,6 +3,15 @@
 CACHE_FILE="/tmp/polybar-gcal-cache"
 MAX_TITLE_LEN=30
 CACHE_MAX_AGE=600  # 10 minutes
+WARN_MINUTES=10
+
+# Colors
+COLOR_WARN="#FF7043"
+COLOR_LIVE="#f45070"
+
+# Icons (font 2)
+ICON_NORMAL="%{T2}󰃰%{T-}"
+ICON_LIVE="%{T2}󰕧%{T-}"
 
 # Force refresh if called with --force
 force=0
@@ -50,26 +59,58 @@ if (( refresh )); then
     rm -f "$tmpfile"
 fi
 
-# Read events (skip first line which is the date stamp), filter past events
+# If cache doesn't exist (gcalcli failed), show nothing
+[[ ! -f "$CACHE_FILE" ]] && exit 0
+
+# Check if there are any events scheduled today
+event_count=$(( $(wc -l < "$CACHE_FILE") - 1 ))
+if (( event_count == 0 )); then
+    echo "$ICON_NORMAL No events today"
+    exit 0
+fi
+
+# Convert HH:MM to minutes since midnight
+time_to_min() {
+    local h=${1%%:*} m=${1##*:}
+    echo $(( 10#$h * 60 + 10#$m ))
+}
+
 now=$(date +%H:%M)
+now_min=$(time_to_min "$now")
+
+# Read events, filter ended ones (end_time must be strictly after now)
 mapfile -t events < <(
     tail -n +2 "$CACHE_FILE" | while IFS=' ' read -r start_time end_time title; do
-        # Keep events that haven't ended yet
-        [[ "$end_time" > "$now" || "$end_time" == "$now" ]] && echo "${start_time} ${title}"
+        [[ "$end_time" > "$now" ]] && echo "${start_time} ${end_time} ${title}"
     done
 )
 
-# No events: output nothing
+# All events ended: show nothing
 [[ ${#events[@]} -eq 0 ]] && exit 0
 
-# Always show the first (nearest) non-ended event
+# First non-ended event
 event="${events[0]}"
+start_time="${event%% *}"
+rest="${event#* }"
+end_time="${rest%% *}"
+title_part="${rest#* }"
 
-# Truncate title if too long (keep "HH:MM " prefix intact)
-time_part="${event%% *}"
-title_part="${event#* }"
+start_min=$(time_to_min "$start_time")
+diff=$((start_min - now_min))
+
+# Truncate title if too long
 if (( ${#title_part} > MAX_TITLE_LEN )); then
     title_part="${title_part:0:$MAX_TITLE_LEN}.."
 fi
 
-echo "${time_part} ${title_part}"
+# Determine state: live, warning (10 min), or normal
+if (( diff <= 0 )); then
+    # Live: event has started and hasn't ended
+    echo "%{F$COLOR_LIVE}$ICON_LIVE ${start_time} ${title_part}%{F-}"
+elif (( diff <= WARN_MINUTES )); then
+    # Starting within 10 minutes
+    echo "%{F$COLOR_WARN}$ICON_NORMAL ${start_time} ${title_part}%{F-}"
+else
+    # Normal
+    echo "$ICON_NORMAL ${start_time} ${title_part}"
+fi
