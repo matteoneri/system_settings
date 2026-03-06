@@ -305,6 +305,8 @@ xorg-xinit
 xorg-xinput
 xorg-xkill
 xorg-xrandr
+xorg-xsetroot
+xsettingsd
 xterm
 yarn
 yay
