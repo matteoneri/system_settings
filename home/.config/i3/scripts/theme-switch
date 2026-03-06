@@ -1,24 +1,19 @@
 #!/bin/bash
 # Day/Night theme switcher
-# Day (9am-6pm): Amber    Night (6pm-9am): Light Blue
-# Usage: theme-switch [day|night]  — argument forces mode, otherwise uses clock
+# Day: Amber    Night: Light Blue
+# Usage: theme-switch [toggle|day|night]  — no arg re-applies last mode (for startup)
+
+STATE_FILE="/tmp/theme-current"
 
 if [[ "$1" == "toggle" ]]; then
-    PREV=$(cat /tmp/theme-current 2>/dev/null)
+    PREV=$(cat "$STATE_FILE" 2>/dev/null)
     [[ "$PREV" == "day" ]] && MODE="night" || MODE="day"
 elif [[ "$1" == "day" || "$1" == "night" ]]; then
     MODE="$1"
 else
-    HOUR=$(date +%H)
-    if (( HOUR >= 9 && HOUR < 18 )); then
-        MODE="day"
-    else
-        MODE="night"
-    fi
+    # Re-apply last saved mode (default to day on first boot)
+    MODE=$(cat "$STATE_FILE" 2>/dev/null || echo "day")
 fi
-
-STATE_FILE="/tmp/theme-current"
-[[ -z "$1" ]] && [[ -f "$STATE_FILE" ]] && [[ "$(cat "$STATE_FILE")" == "$MODE" ]] && exit 0
 
 # Day/Night palettes
 if [[ "$MODE" == "day" ]]; then
@@ -70,19 +65,33 @@ cat > ~/.icons/default/index.theme <<EOF
 [Icon Theme]
 Inherits=$CURSOR
 EOF
+sed -i "s/^gtk-cursor-theme-name=.*/gtk-cursor-theme-name=$CURSOR/" ~/.config/gtk-3.0/settings.ini
 xsetroot -cursor_name left_ptr
+cursor-swap "$CURSOR"
 
 # 7. Update dunst frame color and restart
 sed -i '/frame_color/{s/"#FFB347"/"'"$PRIMARY"'"/;s/"#61afef"/"'"$PRIMARY"'"/;}' ~/.config/dunst/dunstrc
 killall dunst 2>/dev/null
 /usr/bin/dunst & disown
 
-# 8. Reload i3 (picks up theme-colors include for borders)
+# 8. Restart i3 (picks up theme-colors + reloads border cursors from new theme;
+#    exec_always re-runs launch.sh so polybar restarts with new colors)
 echo "$MODE" > "$STATE_FILE"
-i3-msg reload >/dev/null 2>&1
+i3-msg restart >/dev/null 2>&1
 
-# 9. Restart polybar (reload doesn't re-run exec_always)
-~/.config/polybar/launch.sh &
+# 9. Recolor tray icon theme (SVGs + PNGs) and fcitx5 keyboard indicator
+ICON_DIR="$HOME/.local/share/icons/nm-amber"
+find "$ICON_DIR" -name "*.svg" -exec sed -i "s/#FFB347/${PRIMARY}/gi;s/#61afef/${PRIMARY}/gi" {} +
+find "$ICON_DIR" -name "*.png" -exec mogrify -fill "${PRIMARY}" -opaque "#FFB347" {} +
+find "$ICON_DIR" -name "*.png" -exec mogrify -fill "${PRIMARY}" -opaque "#61afef" {} +
+gtk-update-icon-cache -f "$ICON_DIR" 2>/dev/null
+sed -i "s/^TrayTextColor=.*/TrayTextColor=${PRIMARY}/" ~/.config/fcitx5/conf/classicui.conf
+pkill -x fcitx5 2>/dev/null
+sleep 0.3
+fcitx5 -d 2>/dev/null
 
-# 10. Notify (after dunst + reload so notification uses new colors)
-[[ -n "$1" ]] && sleep 1 && notify-send -t 2000 "Theme" "Switched to $MODE mode"
+# 10. Restart snixembed so tray icons pick up recolored theme
+(pkill -x snixembed 2>/dev/null; sleep 2; snixembed --fork) &
+
+# 11. Notify (after dunst + restart so notification uses new colors)
+[[ -n "$1" ]] && sleep 1.5 && notify-send -t 2000 "Theme" "Switched to $MODE mode"

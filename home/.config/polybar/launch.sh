@@ -16,7 +16,3 @@ done
 pkill -f "disk-alert-loop" 2>/dev/null
 (exec -a disk-alert-loop bash -c 'while true; do ~/.config/i3/scripts/disk-alert; sleep 300; done') &>/dev/null & disown
 
-# Periodic theme check (every 60s)
-pkill -f "theme-check-loop" 2>/dev/null
-(exec -a theme-check-loop bash -c 'while true; do sleep 60; ~/.config/i3/scripts/theme-switch; done') &>/dev/null & disown
-
