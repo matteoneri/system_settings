@@ -1,0 +1,35 @@
+#!/bin/bash
+# Watch for resume-from-suspend and network reconnect, then refresh polybar.
+# Restarts polybar (respawns gcal-next, eth_price, etc.) and clears stale caches.
+# Started once from i3 config (exec --no-startup-id).
+
+LOCK="/tmp/resume-refresh-lock"
+
+on_refresh() {
+    # Debounce: skip if refreshed in the last 10 seconds
+    # (resume often triggers both sleep and network signals)
+    if [[ -f "$LOCK" ]] && (( $(date +%s) - $(stat -c %Y "$LOCK") < 10 )); then
+        return
+    fi
+    touch "$LOCK"
+    sleep 3  # wait for network to settle
+    rm -f /tmp/polybar-gcal-cache
+    ~/.config/polybar/launch.sh &
+}
+
+# Resume from suspend
+dbus-monitor --system "type='signal',interface='org.freedesktop.login1.Manager',member='PrepareForSleep'" |
+    while read -r line; do
+        if echo "$line" | grep -q "boolean false"; then
+            on_refresh
+        fi
+    done &
+
+# Network reconnect
+nmcli monitor | while read -r line; do
+    if [[ "$line" == *"Connectivity is now 'full'"* ]]; then
+        on_refresh
+    fi
+done &
+
+wait
