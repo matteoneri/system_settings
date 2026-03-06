@@ -12,4 +12,4 @@ if [[ -f "$PIDFILE" ]] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
     exit 0
 fi
 
-setsid bash -c '~/.config/i3/scripts/fullscreen-alert "FOCUS TIME" "25 MINUTES" & ~/.config/i3/scripts/pomodoro-daemon' </dev/null >/dev/null 2>&1 &
+setsid ~/.config/i3/scripts/pomodoro-daemon </dev/null &>/dev/null &

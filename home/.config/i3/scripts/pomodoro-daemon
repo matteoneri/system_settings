@@ -1,9 +1,10 @@
 #!/bin/bash
 # Pomodoro daemon — not called directly, started by pomodoro script
+# Runs as session leader (via setsid) so kill -- -$$ kills all children
 
 PIDFILE="/tmp/pomodoro-daemon.pid"
 echo $$ > "$PIDFILE"
-trap 'rm -f "$PIDFILE"' EXIT
+trap 'kill 0 2>/dev/null; rm -f "$PIDFILE"' EXIT
 
 SOUND="/usr/share/sounds/freedesktop/stereo/alarm-clock-elapsed.oga"
 FOCUS=1500   # 25 minutes
@@ -15,6 +16,8 @@ play_sound() {
         sleep 1
     done
 }
+
+~/.config/i3/scripts/fullscreen-alert "FOCUS TIME" "25 MINUTES"
 
 while true; do
     sleep $FOCUS
