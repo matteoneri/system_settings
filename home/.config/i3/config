@@ -243,13 +243,12 @@ bindsym $mod+Shift+b exec --no-startup-id firefox
 bindsym $mod+n exec --no-startup-id ~/.config/i3/scripts/yazi-launch
 bindsym $mod+Shift+d exec --no-startup-id ~/.config/i3/scripts/project-launch
 bindsym $mod+slash exec --no-startup-id ~/.config/i3/scripts/ws-toggle-icons
-bindsym Print exec --no-startup-id scrot ~/Screenshots/%Y-%m-%d_%H%M%S.png && notify-send "Screenshot saved"
-bindsym Shift+Print exec --no-startup-id scrot -s ~/Screenshots/%Y-%m-%d_%H%M%S.png && notify-send "Screenshot saved"
+bindsym Print exec --no-startup-id mkdir -p ~/Screenshots && scrot ~/Screenshots/%Y-%m-%d_%H%M%S.png && notify-send "Screenshot saved"
+bindsym Shift+Print exec --no-startup-id mkdir -p ~/Screenshots && scrot -s ~/Screenshots/%Y-%m-%d_%H%M%S.png && notify-send "Screenshot saved"
 bindsym Ctrl+Print exec --no-startup-id peek
 
 # Pomodoro timer (toggle on/off)
 bindsym $mod+Shift+p exec --no-startup-id ~/.config/i3/scripts/pomodoro
-
 
 ##########################################
 # configuration for workspace behaviour: #
@@ -286,7 +285,8 @@ exec --no-startup-id ~/.screenlayout/monitor.sh
 exec --no-startup-id sleep 1 && ~/.config/i3/scripts/theme-switch
 exec --no-startup-id xset s 480 dpms 600 600 600
 exec --no-startup-id xautolock -time 10 -locker "~/.config/i3/scripts/blur-lock"
-exec --no-startup-id /usr/bin/dunst
+exec --no-startup-id ~/.config/i3/scripts/resume-refresh
+
 ###############
 # system tray #
 ###############
