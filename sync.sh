@@ -61,6 +61,11 @@ with open('$HOME_DIR/claude-code/${acct}/preferences.json', 'w') as f:
 "
 done
 
+# Claude Code global instructions (CLAUDE.md)
+for acct in own fna; do
+    cp "$HOME/.claude-${acct}/CLAUDE.md" "$HOME_DIR/claude-code/${acct}/CLAUDE.md"
+done
+
 # Kitty
 cp ~/.config/kitty/kitty.conf "$HOME_DIR/.config/kitty/kitty.conf"
 cp ~/.config/kitty/themes/*.conf "$HOME_DIR/.config/kitty/themes/"
