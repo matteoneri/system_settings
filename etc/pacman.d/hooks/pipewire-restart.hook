@@ -1,0 +1,13 @@
+[Trigger]
+Operation = Upgrade
+Type = Package
+Target = pipewire
+Target = libpipewire
+Target = pipewire-pulse
+Target = wireplumber
+Target = pipewire-audio
+
+[Action]
+Description = Restarting PipeWire user services after upgrade...
+When = PostTransaction
+Exec = /usr/bin/runuser -u matteo -- env XDG_RUNTIME_DIR=/run/user/1000 systemctl --user restart pipewire wireplumber pipewire-pulse
