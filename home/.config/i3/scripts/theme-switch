@@ -68,6 +68,8 @@ EOF
 sed -i "s/^gtk-cursor-theme-name=.*/gtk-cursor-theme-name=$CURSOR/" ~/.config/gtk-3.0/settings.ini
 xsetroot -cursor_name left_ptr
 cursor-swap "$CURSOR"
+# Re-run cursor-swap to catch Electron apps that lazily recreate cursors
+(sleep 5 && cursor-swap "$CURSOR"; sleep 10 && cursor-swap "$CURSOR") &
 
 # 7. Update dunst frame color and restart
 sed -i '/frame_color/{s/"#FFB347"/"'"$PRIMARY"'"/;s/"#61afef"/"'"$PRIMARY"'"/;}' ~/.config/dunst/dunstrc
