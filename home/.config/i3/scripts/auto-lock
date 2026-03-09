@@ -1,0 +1,8 @@
+#!/bin/bash
+
+# Skip locking if audio is playing (e.g. video call in progress)
+if pactl list sink-inputs short 2>/dev/null | grep -q .; then
+    exit 0
+fi
+
+~/.config/i3/scripts/blur-lock

@@ -1,0 +1,12 @@
+#!/bin/bash
+
+if dunstctl is-paused | grep -q "false"; then
+    xautolock -disable
+    notify-send -u low "Do Not Disturb" "ON — notifications paused, auto-lock disabled"
+    sleep 2
+    dunstctl set-paused true
+else
+    dunstctl set-paused false
+    xautolock -enable
+    notify-send -u low "Do Not Disturb" "OFF"
+fi

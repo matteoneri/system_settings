@@ -43,6 +43,7 @@ qdigidoc4
 reiserfsprogs
 restream
 rm2pdf
+rofi-greenclip
 rotki-bin
 signal-cli-native
 signal-desktop-beta-bin

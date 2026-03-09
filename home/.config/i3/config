@@ -204,9 +204,15 @@ bindsym $mod+a focus parent
 bindsym $mod+minus move scratchpad
 bindsym $mod+plus scratchpad show
 
-# kitti3 drop-down terminal
-exec --no-startup-id kitti3
-bindsym $mod+y nop kitti3
+# drop-down terminal
+exec --no-startup-id kitty --class dropdown-terminal
+for_window [class="dropdown-terminal"] move scratchpad
+bindsym $mod+y exec --no-startup-id ~/.config/i3/scripts/dropdown-toggle dropdown-terminal
+
+# drop-down newsboat
+exec --no-startup-id kitty --class dropdown-newsboat -e newsboat
+for_window [class="dropdown-newsboat"] move scratchpad
+bindsym $mod+Shift+y exec --no-startup-id ~/.config/i3/scripts/dropdown-toggle dropdown-newsboat newsboat
 
 # open new empty workspace
 bindsym $mod+Shift+n exec --no-startup-id ~/.config/i3/scripts/empty_workspace
@@ -250,6 +256,12 @@ bindsym Ctrl+Print exec --no-startup-id peek
 # Pomodoro timer (toggle on/off)
 bindsym $mod+Shift+p exec --no-startup-id ~/.config/i3/scripts/pomodoro
 
+# Clipboard history
+bindsym $mod+c exec --no-startup-id rofi -modi "clipboard:greenclip print" -show clipboard -config ~/.config/rofi/rofidmenu.rasi
+
+# Do Not Disturb toggle
+bindsym $mod+z exec --no-startup-id ~/.config/i3/scripts/dnd-toggle
+
 ##########################################
 # configuration for workspace behaviour: #
 ##########################################
@@ -283,8 +295,9 @@ exec --no-startup-id dex --autostart --environment i3
 exec --no-startup-id setxkbmap -layout 'us,ru' -option 'grp:alt_caps_toggle'
 exec --no-startup-id ~/.screenlayout/monitor.sh
 exec --no-startup-id sleep 1 && ~/.config/i3/scripts/theme-switch
+exec --no-startup-id greenclip daemon
 exec --no-startup-id xset s 480 dpms 600 600 600
-exec --no-startup-id xautolock -time 10 -locker "~/.config/i3/scripts/blur-lock"
+exec --no-startup-id xautolock -time 10 -locker "~/.config/i3/scripts/auto-lock"
 exec --no-startup-id ~/.config/i3/scripts/resume-refresh
 
 ###############

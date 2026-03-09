@@ -234,6 +234,7 @@ reiserfsprogs
 restream
 rm2pdf
 rofi
+rofi-greenclip
 rotki-bin
 rsync
 rtkit

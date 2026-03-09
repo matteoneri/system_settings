@@ -1,9 +1,9 @@
 #!/bin/bash
 
 PICTURE=$(mktemp /tmp/i3lock.XXXXXX.png)
-BLUR="5x4"
+BLUR="0x8"
 
-if scrot -z "$PICTURE" && convert "$PICTURE" -blur "$BLUR" "$PICTURE"; then
+if scrot -o "$PICTURE" && magick "$PICTURE" -blur "$BLUR" "$PICTURE"; then
     i3lock -i "$PICTURE"
     rm -f "$PICTURE"
 else
