@@ -1,8 +1,7 @@
 #!/bin/bash
 
-# Terminate already running bar instances and gcal refresh loop
+# Terminate already running bar instances
 killall -q polybar
-pkill -f "polybar-gcal-refresh" 2>/dev/null
 
 # Wait until the processes have been shut down
 while pgrep -u $UID -x polybar >/dev/null; do sleep 1; done

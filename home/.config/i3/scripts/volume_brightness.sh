@@ -1,5 +1,5 @@
 #!/bin/bash
-bar_color="#7f7fff"
+bar_color=$(cat ~/.config/theme/current 2>/dev/null || echo "#FFB347")
 volume_step=1
 max_volume=100
 

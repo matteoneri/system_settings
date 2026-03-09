@@ -336,7 +336,6 @@ client.urgent		    	#f45070		#f45070		$white		#f45070		#f45070
 # Launch polybar
 exec_always --no-startup-id ~/.config/polybar/launch.sh
 
-
 #####################################
 # Application menu handled by rofi: #
 #####################################
