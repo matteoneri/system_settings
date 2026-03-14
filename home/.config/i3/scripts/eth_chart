@@ -27,7 +27,7 @@ fi
 # Build chart with plotext
 RENDER=/tmp/eth_chart_render.txt
 
-python3 -c "
+~/.pyenv/versions/3.12.3/bin/python3 -c "
 import json, re, sys, plotext as plt
 
 with open(sys.argv[1]) as f:

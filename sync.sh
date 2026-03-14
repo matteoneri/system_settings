@@ -61,9 +61,13 @@ with open('$HOME_DIR/claude-code/${acct}/preferences.json', 'w') as f:
 "
 done
 
-# Claude Code global instructions (CLAUDE.md)
+# Claude Code global instructions (CLAUDE.md), statusline, settings
 for acct in own fna; do
     cp "$HOME/.claude-${acct}/CLAUDE.md" "$HOME_DIR/claude-code/${acct}/CLAUDE.md"
+    cp "$HOME/.claude-${acct}/statusline.sh" "$HOME_DIR/claude-code/${acct}/statusline.sh"
+    # settings.json (strip credentials/tokens, keep structure)
+    jq 'del(.permissions.deny[] | select(startswith("Read(~/")))' \
+        "$HOME/.claude-${acct}/settings.json" > "$HOME_DIR/claude-code/${acct}/settings.json" 2>/dev/null || true
 done
 
 # Kitty
