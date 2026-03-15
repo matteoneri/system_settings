@@ -131,6 +131,9 @@ bindsym $mod+r mode "resize"
 # start a terminal
 bindsym $mod+Return exec --no-startup-id kitty
 
+# Словодня — Russian verb aspect trainer
+bindsym $mod+p exec --no-startup-id kitty slovodnia
+
 # kill focused window
 bindsym $mod+q kill
 
@@ -238,9 +241,6 @@ bindsym XF86AudioPlay exec --no-startup-id playerctl play-pause
 bindsym XF86AudioNext exec --no-startup-id playerctl next
 bindsym XF86AudioPrev exec --no-startup-id playerctl previous
 
-# Toggle audio between Speaker and Headphones
-bindsym $mod+p exec --no-startup-id ~/.config/i3/scripts/switch-audio-port
-
 ## App shortcuts
 bindsym $mod+w exec --no-startup-id ~/.config/i3/scripts/random-wallpaper
 bindsym $mod+Shift+w exec --no-startup-id ~/.config/i3/scripts/theme-switch toggle
@@ -291,20 +291,15 @@ exec_always --no-startup-id picom -b
 #############################################
 
 exec --no-startup-id /usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1
-exec --no-startup-id dex --autostart --environment i3
-exec --no-startup-id setxkbmap -layout 'us,ru' -option 'grp:alt_caps_toggle'
+exec --no-startup-id snixembed --fork
+exec --no-startup-id sleep 1 && dex --autostart --environment i3
+# Keyboard layout handled by fcitx5 (us/ru toggle via Alt+CapsLock, autostarted via dex)
 exec --no-startup-id ~/.screenlayout/monitor.sh
 exec --no-startup-id sleep 1 && ~/.config/i3/scripts/theme-switch
 exec --no-startup-id greenclip daemon
 exec --no-startup-id xset s 480 dpms 600 600 600
 exec --no-startup-id xautolock -time 10 -locker "~/.config/i3/scripts/auto-lock"
 exec --no-startup-id ~/.config/i3/scripts/resume-refresh
-
-###############
-# system tray #
-###############
-
-exec --no-startup-id snixembed --fork
 
 ##################
 # floating rules #
