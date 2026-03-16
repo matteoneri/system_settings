@@ -11,6 +11,11 @@ https://feeds.bbci.co.uk/news/technology/rss.xml "~BBC - Technology" bbc tech
 # Anthropic
 https://raw.githubusercontent.com/taobojlen/anthropic-rss-feed/main/anthropic_news_rss.xml "~Anthropic News" anthropic tech
 
+# The Guardian
+https://www.theguardian.com/world/rss "~The Guardian - World" guardian world
+https://www.theguardian.com/uk/technology/rss "~The Guardian - Technology" guardian tech
+https://www.theguardian.com/uk/business/rss "~The Guardian - Business" guardian business
+
 # Reuters (via Google News — Reuters killed RSS in 2020)
 https://news.google.com/rss/search?q=source:reuters&hl=en-US&gl=US&ceid=US:en "~Reuters" reuters news
 

@@ -132,7 +132,8 @@ bindsym $mod+r mode "resize"
 bindsym $mod+Return exec --no-startup-id kitty
 
 # Словодня — Russian verb aspect trainer
-bindsym $mod+p exec --no-startup-id kitty slovodnia
+bindsym $mod+p exec --no-startup-id kitty --class slovodnia slovodnia
+for_window [class="slovodnia"] floating enable, resize set 70 ppt 70 ppt, move position center
 
 # kill focused window
 bindsym $mod+q kill
@@ -275,9 +276,9 @@ for_window [class="Spotify"] move to workspace $ws9
 exec --no-startup-id spotify
 
 # Workspace 10: Chat apps (tabbed)
-assign [class="TelegramDesktop"] $ws10
-assign [class="Signal Beta"] $ws10
-assign [class="Slack"] $ws10
+for_window [class="TelegramDesktop"] move to workspace $ws10
+for_window [class="Signal Beta"] move to workspace $ws10
+for_window [class="Slack"] move to workspace $ws10
 exec --no-startup-id ~/.config/i3/scripts/ws10-layout
 
 ##############

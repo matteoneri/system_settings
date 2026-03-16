@@ -1,6 +1,6 @@
 #!/bin/bash
-# Polybar tail script for Google Calendar events
-# Runs continuously: refreshes cache, displays next event with color states, blinks when live
+# Polybar interval script for Google Calendar events
+# Runs once per invocation: refreshes cache if stale, prints next event with color states
 
 CACHE_FILE="/tmp/polybar-gcal-cache"
 FORCE_FILE="/tmp/polybar-gcal-force"
@@ -39,7 +39,7 @@ refresh_cache() {
         local cache_day=$(head -1 "$CACHE_FILE")
         if [[ "$cache_day" != "$today" ]]; then
             refresh=1
-            rm -f "$ALERT_DIR"/*  # clear alert flags for new day
+            rm -f "$ALERT_DIR"/*
         elif (( $(date +%s) - $(stat -c %Y "$CACHE_FILE") > CACHE_MAX_AGE )); then
             refresh=1
         fi
@@ -68,84 +68,74 @@ refresh_cache() {
     fi
 }
 
-while true; do
-    # Check for force-refresh flag (from click handler)
-    force=0
-    if [[ -f "$FORCE_FILE" ]]; then
-        rm -f "$FORCE_FILE"
-        force=1
-    fi
+# Check for force-refresh flag (from click handler)
+force=0
+if [[ -f "$FORCE_FILE" ]]; then
+    rm -f "$FORCE_FILE"
+    force=1
+fi
 
-    refresh_cache $force
+refresh_cache $force
 
-    # No cache (gcalcli failed) — wait and retry
-    if [[ ! -f "$CACHE_FILE" ]]; then
-        echo ""
-        sleep 60
-        continue
-    fi
+# No cache (gcalcli failed)
+[[ ! -f "$CACHE_FILE" ]] && exit 0
 
-    # No events scheduled today
-    event_count=$(( $(wc -l < "$CACHE_FILE") - 1 ))
-    if (( event_count == 0 )); then
-        echo "$ICON_NORMAL No events today"
-        sleep 30
-        continue
-    fi
+# No events scheduled today
+event_count=$(( $(wc -l < "$CACHE_FILE") - 1 ))
+if (( event_count == 0 )); then
+    echo "$ICON_NORMAL No events today"
+    exit 0
+fi
 
-    now=$(date +%H:%M)
-    now_min=$(time_to_min "$now")
+now=$(date +%H:%M)
+now_min=$(time_to_min "$now")
 
-    # Filter to non-ended events
-    mapfile -t events < <(
-        tail -n +2 "$CACHE_FILE" | while IFS=' ' read -r st et title; do
-            [[ "$et" > "$now" ]] && echo "${st} ${et} ${title}"
-        done
-    )
+# Filter to non-ended events
+mapfile -t events < <(
+    tail -n +2 "$CACHE_FILE" | while IFS=' ' read -r st et title; do
+        [[ "$et" > "$now" ]] && echo "${st} ${et} ${title}"
+    done
+)
 
-    # All events ended
-    if [[ ${#events[@]} -eq 0 ]]; then
-        echo ""
-        sleep 30
-        continue
-    fi
+# All events ended
+if [[ ${#events[@]} -eq 0 ]]; then
+    exit 0
+fi
 
-    # Parse first non-ended event
-    event="${events[0]}"
-    start_time="${event%% *}"
-    rest="${event#* }"
-    end_time="${rest%% *}"
-    title_part="${rest#* }"
+# Parse first non-ended event
+event="${events[0]}"
+start_time="${event%% *}"
+rest="${event#* }"
+end_time="${rest%% *}"
+title_part="${rest#* }"
 
-    start_min=$(time_to_min "$start_time")
-    diff=$((start_min - now_min))
+start_min=$(time_to_min "$start_time")
+diff=$((start_min - now_min))
 
-    # Full title for alerts, truncated for polybar
-    full_title="$title_part"
-    if (( ${#title_part} > MAX_TITLE_LEN )); then
-        title_part="${title_part:0:$MAX_TITLE_LEN}.."
-    fi
+# Full title for alerts, truncated for polybar
+full_title="$title_part"
+if (( ${#title_part} > MAX_TITLE_LEN )); then
+    title_part="${title_part:0:$MAX_TITLE_LEN}.."
+fi
 
-    # 5-minute fullscreen alert (once per meeting)
-    alert_flag="$ALERT_DIR/${start_time}_$(echo "$full_title" | md5sum | cut -c1-8)"
-    if (( diff > 0 && diff <= ALERT_MINUTES )) && [[ ! -f "$alert_flag" ]]; then
-        touch "$alert_flag"
-        ~/.config/i3/scripts/fullscreen-alert "$full_title" "IN ${diff} MINUTES!" &
-    fi
+# 5-minute fullscreen alert (once per meeting)
+alert_flag="$ALERT_DIR/${start_time}_$(echo "$full_title" | md5sum | cut -c1-8)"
+if (( diff > 0 && diff <= ALERT_MINUTES )) && [[ ! -f "$alert_flag" ]]; then
+    touch "$alert_flag"
+    ~/.config/i3/scripts/fullscreen-alert "$full_title" "IN ${diff} MINUTES!" &
+fi
 
-    if (( diff <= 0 )); then
-        # LIVE — blink: alternate visible/invisible
+if (( diff <= 0 )); then
+    # LIVE — blink by alternating on even/odd seconds
+    if (( $(date +%s) % 2 )); then
         echo "%{F$COLOR_LIVE}$ICON_LIVE ${start_time} ${title_part}%{F-}"
-        sleep 1
-        echo "%{F$BG_COLOR}$ICON_LIVE ${start_time} ${title_part}%{F-}"
-        sleep 1
-    elif (( diff <= WARN_MINUTES )); then
-        # WARNING — 10 min before
-        echo "%{F$COLOR_WARN}$ICON_NORMAL ${start_time} ${title_part}%{F-}"
-        sleep 30
     else
-        # NORMAL
-        echo "$ICON_NORMAL ${start_time} ${title_part}"
-        sleep 30
+        echo "%{F$BG_COLOR}$ICON_LIVE ${start_time} ${title_part}%{F-}"
     fi
-done
+elif (( diff <= WARN_MINUTES )); then
+    # WARNING — 10 min before
+    echo "%{F$COLOR_WARN}$ICON_NORMAL ${start_time} ${title_part}%{F-}"
+else
+    # NORMAL
+    echo "$ICON_NORMAL ${start_time} ${title_part}"
+fi

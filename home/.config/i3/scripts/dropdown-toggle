@@ -6,15 +6,15 @@ CLASS="$1"
 shift
 
 if i3-msg "[class=\"$CLASS\"] scratchpad show" 2>&1 | grep -q '"success":true'; then
-    i3-msg "[class=\"$CLASS\"] fullscreen enable"
+    i3-msg "[class=\"$CLASS\"] floating enable, resize set 70 ppt 70 ppt, move position center"
     exit 0
 fi
 
-# Window doesn't exist — launch it and fullscreen once it appears
+# Window doesn't exist — launch it and center once it appears
 if [ $# -eq 0 ]; then
     kitty --class "$CLASS" &disown
 else
     kitty --class "$CLASS" -e "$@" &disown
 fi
 sleep 0.3
-i3-msg "[class=\"$CLASS\"] scratchpad show, fullscreen enable"
+i3-msg "[class=\"$CLASS\"] scratchpad show, floating enable, resize set 70 ppt 70 ppt, move position center"
