@@ -1,3 +1,5 @@
 * {
     primary: #FFB347;
+    bg: #1a1d30;
+    bg-alt: #282840;
 }

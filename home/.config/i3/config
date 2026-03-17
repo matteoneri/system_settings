@@ -294,7 +294,9 @@ exec_always --no-startup-id picom -b
 exec --no-startup-id /usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1
 exec --no-startup-id snixembed --fork
 exec --no-startup-id sleep 1 && dex --autostart --environment i3
-# Keyboard layout handled by fcitx5 (us/ru toggle via Alt+CapsLock, autostarted via dex)
+# Keyboard layout: CapsLock toggles us/ru (LED on = Russian)
+exec --no-startup-id setxkbmap -layout us,ru -option grp:caps_toggle
+exec --no-startup-id ~/.config/i3/scripts/kbd-notify
 exec --no-startup-id ~/.screenlayout/monitor.sh
 exec --no-startup-id sleep 1 && ~/.config/i3/scripts/theme-switch
 exec --no-startup-id greenclip daemon
@@ -319,7 +321,7 @@ for_window [class="Bluetooth-sendto" instance="bluetooth-sendto"] floating enabl
 for_window [class="Pamac-manager"] floating enable
 for_window [class="obsidian"] floating enable
 for_window [class="pcloud"] floating enable
-for_window [class="thunar" instance="thunar"] floating enable
+for_window [class="Thunar"] floating enable, resize set 50 ppt 80 ppt, move position center
 for_window [window_role="About"] floating enable
 for_window [instance="i3-alert"] floating enable, border none, fullscreen enable
 
@@ -327,16 +329,9 @@ for_window [instance="i3-alert"] floating enable, border none, fullscreen enable
 # color settings for bar and windows #
 ######################################
 
-# Define colors variables:
-set $bg		#282c34
-set $bgalt		#363a42
-set $white		#ffffff
-set $grey		#b0b5bd
-
-# define colors for windows (focused/focused_inactive from theme-switch):
+# define colors for windows (from theme-switch):
 include ~/.config/i3/theme-colors
-client.unfocused	    	$bgalt		$bgalt		$grey		$bgalt		$bgalt
-client.urgent		    	#f45070		#f45070		$white		#f45070		#f45070
+client.urgent		    	#f45070		#f45070		#ffffff		#f45070		#f45070
 
 ######################
 # bar settings:      #

@@ -1,0 +1,20 @@
+#!/bin/bash
+# Watch for keyboard layout changes via xset and send notification
+prev=""
+while true; do
+    # Group 2 on = second layout (ru), off = first layout (us)
+    xset_out=$(xset -q 2>/dev/null)
+    if echo "$xset_out" | grep -q "Group 2:.*on"; then
+        current="ru"
+    else
+        current="us"
+    fi
+    if [[ -n "$prev" && "$current" != "$prev" ]]; then
+        case "$current" in
+            us) notify-send -t 800 -h string:x-dunst-stack-tag:kbd "EN" ;;
+            ru) notify-send -t 800 -h string:x-dunst-stack-tag:kbd "RU" ;;
+        esac
+    fi
+    prev="$current"
+    sleep 0.5
+done

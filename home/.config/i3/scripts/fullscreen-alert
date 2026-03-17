@@ -5,7 +5,7 @@
 TITLE="${1:-Alert}"
 SUBTITLE="${2:-}"
 COLOR="#f45070"
-BG="#282c34"
+BG="#$(cat ~/.config/theme/bg 2>/dev/null | cut -c1-6 || echo '282c34')"
 HOLD=3
 
 kitty --name i3-alert \

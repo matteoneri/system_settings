@@ -12,8 +12,9 @@ ALERT_MINUTES=5
 
 mkdir -p "$ALERT_DIR"
 
-# Colors
-BG_COLOR="#282c34"
+# Colors — read polybar background from theme (strip #cc alpha prefix)
+BG_COLOR="#$(sed -n 's/^background = #cc//p' ~/.config/polybar/colors.ini 2>/dev/null)"
+BG_COLOR="${BG_COLOR:-#282c34}"
 COLOR_WARN="#FF7043"
 COLOR_LIVE="#f45070"
 

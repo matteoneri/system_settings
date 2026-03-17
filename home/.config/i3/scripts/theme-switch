@@ -20,21 +20,29 @@ if [[ "$MODE" == "day" ]]; then
     PRIMARY="#FFB347"
     ALERT="#FFE8C0"
     DISABLED="#a67520"
+    BAR_BG="#cc1a1d30"
+    BAR_BG_ALT="#cc282840"
     CURSOR="Bibata-Modern-Amber"
     WALLPAPER="$HOME/Pictures/wallpapers/wall_day.png"
 else
     PRIMARY="#61afef"
     ALERT="#b4d7ff"
     DISABLED="#3b6ea5"
+    BAR_BG="#cc1e2430"
+    BAR_BG_ALT="#cc2c3242"
     CURSOR="Bibata-Modern-Ice"
     WALLPAPER="$HOME/Pictures/wallpapers/wall_night.jpg"
 fi
 
-# 1. Write color state file for other scripts
+# 1. Write color state files for other scripts
+mkdir -p ~/.config/theme
 echo "$PRIMARY" > ~/.config/theme/current
+echo "${BAR_BG:3}" > ~/.config/theme/bg
 
 # 2. Write polybar colors
 cat > ~/.config/polybar/colors.ini <<EOF
+background = ${BAR_BG}
+background-alt = ${BAR_BG_ALT}
 foreground = ${PRIMARY}
 primary = ${PRIMARY}
 alert = ${ALERT}
@@ -42,9 +50,13 @@ disabled = ${DISABLED}
 EOF
 
 # 3. Write rofi theme override
+BAR_BG_SOLID="#${BAR_BG:3}"  # strip #cc alpha prefix → #1a1d30
+BAR_BG_ALT_SOLID="#${BAR_BG_ALT:3}"
 cat > ~/.config/rofi/theme-colors.rasi <<EOF
 * {
     primary: ${PRIMARY};
+    bg: ${BAR_BG_SOLID};
+    bg-alt: ${BAR_BG_ALT_SOLID};
 }
 EOF
 
@@ -53,8 +65,9 @@ feh --bg-fill "$WALLPAPER"
 
 # 5. Write i3 theme-colors include (border colors)
 cat > ~/.config/i3/theme-colors <<EOF
-client.focused          ${PRIMARY} ${PRIMARY} #282c34 ${PRIMARY} ${PRIMARY}
-client.focused_inactive ${DISABLED} ${DISABLED} #282c34 ${DISABLED} ${DISABLED}
+client.focused          ${PRIMARY} ${PRIMARY} ${BAR_BG_SOLID} ${PRIMARY} ${PRIMARY}
+client.focused_inactive ${DISABLED} ${DISABLED} ${BAR_BG_SOLID} ${DISABLED} ${DISABLED}
+client.unfocused        ${BAR_BG_SOLID} ${BAR_BG_SOLID} ${DISABLED} ${BAR_BG_SOLID} ${BAR_BG_SOLID}
 EOF
 
 # 6. Set cursor theme
@@ -71,8 +84,11 @@ cursor-swap "$CURSOR"
 # Re-run cursor-swap to catch Electron apps that lazily recreate cursors
 (sleep 5 && cursor-swap "$CURSOR"; sleep 10 && cursor-swap "$CURSOR") &
 
-# 7. Update dunst frame color and restart
-sed -i '/frame_color/{s/"#FFB347"/"'"$PRIMARY"'"/;s/"#61afef"/"'"$PRIMARY"'"/;}' ~/.config/dunst/dunstrc
+# 7. Update dunst colors and restart
+# Global frame_color + urgency_normal frame_color → PRIMARY
+# urgency_low (#98c379) and urgency_critical (#e06c75) are left untouched
+sed -i '/^\[urgency_low\]/,/^\[/{/frame_color/b}; /^\[urgency_critical\]/,/^\[/{/frame_color/b}; /^\s*frame_color\s*=/{s/"#[0-9a-fA-F]\{6\}"/"'"$PRIMARY"'"/;}' ~/.config/dunst/dunstrc
+sed -i '/^\s*background\s*=/{s/"#[0-9a-fA-F]\{6\}"/"'"$BAR_BG_SOLID"'"/;}' ~/.config/dunst/dunstrc
 killall dunst 2>/dev/null
 /usr/bin/dunst & disown
 
@@ -81,16 +97,12 @@ killall dunst 2>/dev/null
 echo "$MODE" > "$STATE_FILE"
 i3-msg restart >/dev/null 2>&1
 
-# 9. Recolor tray icon theme (SVGs + PNGs) and fcitx5 keyboard indicator
+# 9. Recolor tray icon theme (SVGs + PNGs)
 ICON_DIR="$HOME/.local/share/icons/nm-amber"
 find "$ICON_DIR" -name "*.svg" -exec sed -i "s/#FFB347/${PRIMARY}/gi;s/#61afef/${PRIMARY}/gi" {} +
 find "$ICON_DIR" -name "*.png" -exec mogrify -fill "${PRIMARY}" -opaque "#FFB347" {} +
 find "$ICON_DIR" -name "*.png" -exec mogrify -fill "${PRIMARY}" -opaque "#61afef" {} +
 gtk-update-icon-cache -f "$ICON_DIR" 2>/dev/null
-sed -i "s/^TrayTextColor=.*/TrayTextColor=${PRIMARY}/" ~/.config/fcitx5/conf/classicui.conf
-pkill -x fcitx5 2>/dev/null
-sleep 0.3
-fcitx5 -d 2>/dev/null
 
 # 10. Restart snixembed so tray icons pick up recolored theme
 (pkill -x snixembed 2>/dev/null; sleep 2; snixembed --fork) &
