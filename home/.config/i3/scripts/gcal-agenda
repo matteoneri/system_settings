@@ -1,0 +1,131 @@
+#!/bin/bash
+# Rofi popup: 7-day color-coded agenda from Google Calendar
+
+CACHE_FILE="/tmp/polybar-gcal-agenda-cache"
+FORCE_FILE="/tmp/polybar-gcal-force"
+CACHE_MAX_AGE=600  # 10 minutes
+
+# Colors
+COLOR_FNA="#FFB347"
+COLOR_PERSONAL="#61afef"
+COLOR_HEADER="#ffffff"
+
+# Compute dates once to avoid midnight boundary issues
+today=$(date +%Y-%m-%d)
+tomorrow=$(date -d "$today + 1 day" +%Y-%m-%d)
+now=$(date +%H:%M)
+
+command -v gcalcli &>/dev/null || { rofi -e "gcalcli unavailable"; exit 1; }
+
+# Check force-refresh flag (written by right-click)
+refresh=0
+if [[ -f "$FORCE_FILE" ]]; then
+    rm -f "$FORCE_FILE"
+    refresh=1
+elif [[ ! -f "$CACHE_FILE" ]]; then
+    refresh=1
+elif (( $(date +%s) - $(stat -c %Y "$CACHE_FILE") > CACHE_MAX_AGE )); then
+    refresh=1
+fi
+
+if (( refresh )); then
+    end=$(date -d "$today + 7 days" +%Y-%m-%d)
+    tmpfile=$(mktemp)
+    if gcalcli agenda "$today" "$end" \
+        --cal "Matteo Neri @FNA" --cal "matteo.neri920114@gmail.com" \
+        --tsv --details calendar > "$tmpfile" 2>/dev/null; then
+        mv "$tmpfile" "$CACHE_FILE"
+    else
+        rm -f "$tmpfile"
+        if [[ ! -f "$CACHE_FILE" ]]; then
+            rofi -e "Calendar unavailable"
+            exit 1
+        fi
+        # Stale cache exists — use it with a warning
+    fi
+fi
+
+# Parse and format
+formatted=""
+current_day=""
+has_events=0
+
+while IFS=$'\t' read -r -a fields; do
+    # gcalcli TSV has variable columns:
+    #   All-day: start_date, end_date, title, calendar (4 fields)
+    #   Timed:   start_date, start_time, end_date, end_time, title, calendar (6 fields)
+    # Detect by checking if field[1] looks like a time (HH:MM)
+    if [[ "${fields[1]}" =~ ^[0-9]{1,2}:[0-9]{2}$ ]]; then
+        start_date="${fields[0]}" start_time="${fields[1]}"
+        end_date="${fields[2]}" end_time="${fields[3]}"
+        title="${fields[4]}" calendar="${fields[5]}"
+    else
+        start_date="${fields[0]}" start_time=""
+        end_date="${fields[1]}" end_time=""
+        title="${fields[2]}" calendar="${fields[3]}"
+    fi
+
+    [[ -z "$start_date" || -z "$title" ]] && continue
+
+    # Filter past timed events from today
+    # HH:MM lexicographic comparison works because both sides are zero-padded
+    if [[ -n "$start_time" && "$start_date" == "$today" && "$end_time" < "$now" ]]; then
+        continue
+    fi
+
+    # All-day events: skip if entirely in the past.
+    # Multi-day all-day events show under start_date only (gcalcli outputs one row per event).
+    if [[ -z "$start_time" && ( "$end_date" < "$today" || "$end_date" == "$today" ) ]]; then
+        continue
+    fi
+
+    has_events=1
+
+    # Day header
+    if [[ "$start_date" != "$current_day" ]]; then
+        current_day="$start_date"
+        if [[ "$start_date" == "$today" ]]; then
+            day_label="Today — $(date -d "$start_date" '+%a %d %b')"
+        elif [[ "$start_date" == "$tomorrow" ]]; then
+            day_label="Tomorrow — $(date -d "$start_date" '+%a %d %b')"
+        else
+            day_label=$(date -d "$start_date" '+%A %d %b')
+        fi
+        # Blank line between day groups (not before the first)
+        [[ -n "$formatted" ]] && formatted+=$'\n'
+        formatted+="<b><span foreground='${COLOR_HEADER}'>         ${day_label}</span></b>"$'\n'
+    fi
+
+    # Truncate title
+    if (( ${#title} > 50 )); then
+        title="${title:0:50}.."
+    fi
+
+    # Color by calendar (substring match for resilience)
+    if [[ "$calendar" == *FNA* ]]; then
+        color="$COLOR_FNA"
+    else
+        color="$COLOR_PERSONAL"
+    fi
+
+    # Format event line
+    if [[ -n "$start_time" ]]; then
+        formatted+="<span foreground='${color}'>  ${start_time}  ${title}</span>"$'\n'
+    else
+        formatted+="<span foreground='${color}'>  All day  ${title}</span>"$'\n'
+    fi
+done < <(tail -n +2 "$CACHE_FILE")
+
+if (( ! has_events )); then
+    formatted="No events this week"
+fi
+
+# Display in rofi (discard selection — view only)
+formatted="${formatted%$'\n'}"
+echo "$formatted" | rofi -dmenu -markup-rows -p "Week Agenda" \
+    -theme-str '* {font: "JetBrainsMono Nerd Font 24";}' \
+    -theme-str 'window {width: 800px;}' \
+    -theme-str 'listview {lines: 25; scrollbar: true;}' \
+    -theme-str 'entry {enabled: false;}' \
+    -theme-str 'element selected.normal {background-color: #3a3a50; text-color: inherit;}' \
+    -no-custom > /dev/null 2>&1
