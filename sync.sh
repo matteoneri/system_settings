@@ -70,6 +70,11 @@ for acct in own fna; do
         "$HOME/.claude-${acct}/settings.json" > "$HOME_DIR/claude-code/${acct}/settings.json" 2>/dev/null || true
 done
 
+# Neovim
+mkdir -p "$HOME_DIR/.config/nvim/lua/plugins"
+cp ~/.config/nvim/init.lua "$HOME_DIR/.config/nvim/init.lua"
+cp ~/.config/nvim/lua/plugins/*.lua "$HOME_DIR/.config/nvim/lua/plugins/"
+
 # Kitty
 cp ~/.config/kitty/kitty.conf "$HOME_DIR/.config/kitty/kitty.conf"
 cp ~/.config/kitty/themes/*.conf "$HOME_DIR/.config/kitty/themes/"

@@ -164,6 +164,7 @@ mpv
 mtools
 nano
 nano-syntax-highlighting
+neovim
 netctl
 networkmanager
 network-manager-applet
@@ -266,6 +267,7 @@ tk
 tldr
 transmission-cli
 tree
+tree-sitter-cli
 trezor-suite-bin
 ttf-bitstream-vera
 ttf-dejavu
