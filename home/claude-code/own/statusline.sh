@@ -41,12 +41,14 @@ if [ "$cache_age" -gt 60 ]; then
 fi
 
 RESET_5H=""
+RESET_7D=""
 if [ -f "$USAGE_CACHE" ]; then
-    IFS=$'\t' read -r USAGE_5H USAGE_7D RESET_5H_TS < <(
+    IFS=$'\t' read -r USAGE_5H USAGE_7D RESET_5H_TS RESET_7D_TS < <(
         jq -r '[
             (try (.five_hour.utilization // null | if . != null then (. | floor | tostring) else "?" end) catch "?"),
             (try (.seven_day.utilization // null | if . != null then (. | floor | tostring) else "?" end) catch "?"),
-            (try (.five_hour.resets_at // null | if . != null then tostring else "?" end) catch "?")
+            (try (.five_hour.resets_at // null | if . != null then tostring else "?" end) catch "?"),
+            (try (.seven_day.resets_at // null | if . != null then tostring else "?" end) catch "?")
         ] | @tsv' "$USAGE_CACHE" 2>/dev/null
     )
     # Convert reset timestamp to countdown
@@ -68,6 +70,29 @@ if [ -f "$USAGE_CACHE" ]; then
             r_h=$(( diff_s / 3600 ))
             r_m=$(( (diff_s % 3600) / 60 ))
             RESET_5H="${r_h}h${r_m}m"
+        fi
+    fi
+    # Convert 7d reset timestamp to countdown
+    if [ -n "$RESET_7D_TS" ] && [ "$RESET_7D_TS" != "?" ]; then
+        if echo "$RESET_7D_TS" | grep -qE '^[0-9]+$'; then
+            if [ ${#RESET_7D_TS} -gt 10 ]; then
+                reset7_s=$(( RESET_7D_TS / 1000 ))
+            else
+                reset7_s=$RESET_7D_TS
+            fi
+        else
+            reset7_s=$(date -d "$RESET_7D_TS" +%s 2>/dev/null)
+        fi
+        if [ -n "$reset7_s" ] && [ "$reset7_s" -gt "$now_s" ] 2>/dev/null; then
+            diff7_s=$(( reset7_s - now_s ))
+            r7_d=$(( diff7_s / 86400 ))
+            r7_h=$(( (diff7_s % 86400) / 3600 ))
+            if [ "$r7_d" -gt 0 ]; then
+                RESET_7D="${r7_d}d${r7_h}h"
+            else
+                r7_m=$(( (diff7_s % 3600) / 60 ))
+                RESET_7D="${r7_h}h${r7_m}m"
+            fi
         fi
     fi
 fi
@@ -247,7 +272,11 @@ if [ -n "$USAGE_7D" ] && [ "$USAGE_7D" != "?" ]; then
     else
         u7_color='\033[31m'
     fi
-    line2="$line2 $(printf ' %b7d:%s%%\033[0m' "$u7_color" "$USAGE_7D")"
+    if [ -n "$RESET_7D" ]; then
+        line2="$line2 $(printf ' %b7d:%s%%\033[0m\033[2m(%s)\033[0m' "$u7_color" "$USAGE_7D" "$RESET_7D")"
+    else
+        line2="$line2 $(printf ' %b7d:%s%%\033[0m' "$u7_color" "$USAGE_7D")"
+    fi
 fi
 
 printf '%b\n\n%b' "$line1" "$line2"
