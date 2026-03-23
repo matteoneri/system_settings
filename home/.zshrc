@@ -10,7 +10,9 @@ zstyle ':omz:plugins:nvm' lazy yes
 source "$ZSH/oh-my-zsh.sh"
 
 # Editor
-export EDITOR='vim'
+export EDITOR='nvim'
+export VISUAL='nvim'
+alias vim='nvim'
 
 # Pyenv
 export PYENV_ROOT="$HOME/.pyenv"
@@ -37,21 +39,39 @@ export PATH="$PATH:$ANDROID_HOME/cmdline-tools/latest/bin"
 
 # Claude CLI account auto-switch based on project directory
 claude() {
-    local dir="$PWD"
-    if [[ "$dir" == */Projects/ActiveProjects/OWN/* || "$dir" == */Projects/ActiveProjects/OWN ]]; then
+    local account=""
+    local args=()
+    for arg in "$@"; do
+        case "$arg" in
+            --own) account="own" ;;
+            --fna) account="fna" ;;
+            *) args+=("$arg") ;;
+        esac
+    done
+
+    if [[ -z "$account" ]]; then
+        local dir="$PWD"
+        if [[ "$dir" == */Projects/ActiveProjects/OWN/* || "$dir" == */Projects/ActiveProjects/OWN ]]; then
+            account="own"
+        elif [[ "$dir" == */Projects/ActiveProjects/FNA/* || "$dir" == */Projects/ActiveProjects/FNA ]]; then
+            account="fna"
+        fi
+    fi
+
+    if [[ "$account" == "own" ]]; then
         echo "Claude: using OWN account"
-        CLAUDE_CONFIG_DIR="$HOME/.claude-own" command claude "$@"
-    elif [[ "$dir" == */Projects/ActiveProjects/FNA/* || "$dir" == */Projects/ActiveProjects/FNA ]]; then
+        CLAUDE_CONFIG_DIR="$HOME/.claude-own" command claude "${args[@]}"
+    elif [[ "$account" == "fna" ]]; then
         echo "Claude: using FNA account"
-        CLAUDE_CONFIG_DIR="$HOME/.claude-fna" command claude "$@"
+        CLAUDE_CONFIG_DIR="$HOME/.claude-fna" command claude "${args[@]}"
     else
         echo "Account: [1] FNA (default)  [2] OWN"
         read -r -k 1 "choice?"
         [[ "$choice" != $'\n' ]] && echo
         if [[ "$choice" == "2" ]]; then
-            CLAUDE_CONFIG_DIR="$HOME/.claude-own" command claude "$@"
+            CLAUDE_CONFIG_DIR="$HOME/.claude-own" command claude "${args[@]}"
         else
-            CLAUDE_CONFIG_DIR="$HOME/.claude-fna" command claude "$@"
+            CLAUDE_CONFIG_DIR="$HOME/.claude-fna" command claude "${args[@]}"
         fi
     fi
 }

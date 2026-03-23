@@ -131,9 +131,9 @@ bindsym $mod+r mode "resize"
 # start a terminal
 bindsym $mod+Return exec --no-startup-id kitty
 
-# Словодня — Russian verb aspect trainer
-bindsym $mod+p exec --no-startup-id kitty --class slovodnia slovodnia
-for_window [class="slovodnia"] floating enable, resize set 70 ppt 70 ppt, move position center
+# Словодня — Russian verb aspect trainer (scratchpad toggle)
+bindsym $mod+p exec --no-startup-id ~/.config/i3/scripts/slovodnia-toggle
+for_window [class="slovodnia"] floating enable, resize set 70 ppt 70 ppt, move position center, move scratchpad, scratchpad show
 
 # kill focused window
 bindsym $mod+q kill

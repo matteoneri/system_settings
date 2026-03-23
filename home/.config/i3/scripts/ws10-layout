@@ -3,7 +3,7 @@
 
 sleep 2
 
-i3-msg 'workspace number 10'
+i3-msg 'workspace "10:󰍡"'
 
 Telegram &
 

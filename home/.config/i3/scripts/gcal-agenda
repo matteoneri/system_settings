@@ -15,7 +15,8 @@ today=$(date +%Y-%m-%d)
 tomorrow=$(date -d "$today + 1 day" +%Y-%m-%d)
 now=$(date +%H:%M)
 
-command -v gcalcli &>/dev/null || { rofi -e "gcalcli unavailable"; exit 1; }
+GCALCLI="${GCALCLI:-$(command -v gcalcli 2>/dev/null || echo "$HOME/.pyenv/versions/3.12.3/bin/gcalcli")}"
+[[ -x "$GCALCLI" ]] || { rofi -e "gcalcli unavailable"; exit 1; }
 
 # Check force-refresh flag (written by right-click)
 refresh=0
@@ -31,7 +32,7 @@ fi
 if (( refresh )); then
     end=$(date -d "$today + 7 days" +%Y-%m-%d)
     tmpfile=$(mktemp)
-    if gcalcli agenda "$today" "$end" \
+    if "$GCALCLI" agenda "$today" "$end" \
         --cal "Matteo Neri @FNA" --cal "matteo.neri920114@gmail.com" \
         --tsv --details calendar > "$tmpfile" 2>/dev/null; then
         mv "$tmpfile" "$CACHE_FILE"

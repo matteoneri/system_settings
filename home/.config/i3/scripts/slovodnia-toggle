@@ -1,0 +1,7 @@
+#!/bin/sh
+# Toggle slovodnia scratchpad: show/hide if running, launch if not
+if i3-msg '[class="slovodnia"] scratchpad show' 2>/dev/null | grep -q '"success":true'; then
+    :
+else
+    kitty --class slovodnia slovodnia
+fi
