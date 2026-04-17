@@ -17,6 +17,9 @@ workspace_layout default
 #border indicator on windows:
 default_border pixel 2
 
+# show titlebar on regular kitty windows (tabbed/stacked already show one)
+for_window [class="kitty"] border normal 2
+
 gaps inner 6
 gaps outer 3
 
