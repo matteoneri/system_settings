@@ -1,0 +1,50 @@
+# Portable zshrc — works on any Unix (Debian/Arch/macOS). Every optional
+# tool is guarded behind `command -v`, so missing tools produce no errors.
+# For the full desktop version with Arch/i3/kitty/claude-account integration,
+# see .zshrc.
+
+# ── Oh My Zsh ────────────────────────────────────────────────────
+if [[ -d "$HOME/.oh-my-zsh" ]]; then
+    export ZSH="$HOME/.oh-my-zsh"
+    ZSH_THEME=""
+    plugins=(git python)
+    source "$ZSH/oh-my-zsh.sh"
+fi
+
+# ── History ──────────────────────────────────────────────────────
+HISTFILE="$HOME/.zsh_history"
+HISTSIZE=50000
+SAVEHIST=50000
+setopt SHARE_HISTORY HIST_IGNORE_DUPS HIST_IGNORE_SPACE HIST_REDUCE_BLANKS
+
+# ── Editor ───────────────────────────────────────────────────────
+if command -v nvim &>/dev/null; then
+    export EDITOR='nvim'
+    export VISUAL='nvim'
+    alias vim='nvim'
+elif command -v vim &>/dev/null; then
+    export EDITOR='vim'
+    export VISUAL='vim'
+fi
+
+# ── Modern CLI aliases (only if the tool is installed) ───────────
+command -v eza &>/dev/null && {
+    alias ls='eza'
+    alias ll='eza -l --git'
+    alias la='eza -la --git'
+    alias tree='eza --tree'
+}
+command -v bat &>/dev/null && {
+    alias cat='bat --paging=never --style=plain'
+    alias catp='bat'
+}
+
+# ── Prompt (starship) ────────────────────────────────────────────
+command -v starship &>/dev/null && eval "$(starship init zsh)"
+
+# ── Smart cd (zoxide) ────────────────────────────────────────────
+command -v zoxide &>/dev/null && eval "$(zoxide init zsh)"
+
+# ── PATH extensions (guarded) ────────────────────────────────────
+[[ -d "$HOME/.local/bin" ]] && export PATH="$HOME/.local/bin:$PATH"
+[[ -d "$HOME/.cargo/bin" ]] && export PATH="$HOME/.cargo/bin:$PATH"
