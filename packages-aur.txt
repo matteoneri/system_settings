@@ -7,6 +7,7 @@ blueberry
 brave-bin
 bridge-utils
 docker-rootless-extras
+electron40-bin
 figma-linux-bin
 flutter-bin
 fonts-droid-fallback
@@ -40,6 +41,7 @@ postman-bin
 proton-mail-bin
 python-async_generator
 qdigidoc4
+qtkeychain-qt5
 reiserfsprogs
 restream
 rm2pdf

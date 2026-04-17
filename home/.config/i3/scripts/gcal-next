@@ -12,9 +12,6 @@ ALERT_MINUTES=5
 
 mkdir -p "$ALERT_DIR"
 
-# Colors — read polybar background from theme (strip #cc alpha prefix)
-BG_COLOR="#$(sed -n 's/^background = #cc//p' ~/.config/polybar/colors.ini 2>/dev/null)"
-BG_COLOR="${BG_COLOR:-#282c34}"
 COLOR_WARN="#FF7043"
 COLOR_LIVE="#f45070"
 
@@ -24,6 +21,14 @@ ICON_LIVE="%{T2}󰕧%{T-}"
 
 GCALCLI="${GCALCLI:-$(command -v gcalcli 2>/dev/null || echo "$HOME/.pyenv/versions/3.12.3/bin/gcalcli")}"
 [[ -x "$GCALCLI" ]] || exit 0
+
+# User config: defines GCAL_CAL_ARGS as a bash array of --cal entries.
+# See ~/Documents/Projects/system_settings/home/.config/gcal-next.env.example
+GCAL_CAL_ARGS=()
+if [[ -f "$HOME/.config/gcal-next.env" ]]; then
+    # shellcheck source=/dev/null
+    source "$HOME/.config/gcal-next.env"
+fi
 
 time_to_min() {
     local h=${1%%:*} m=${1##*:}
@@ -51,7 +56,7 @@ refresh_cache() {
         (( force )) && notify-send -t 2000 "Calendar" "Refreshing..."
         local tmpfile=$(mktemp)
         if "$GCALCLI" agenda "$today" "$(date -d "$today + 1 day" +%Y-%m-%d)" \
-            --cal "Matteo Neri @FNA" --cal "matteo.neri920114@gmail.com" --tsv 2>"$CACHE_FILE.err" \
+            "${GCAL_CAL_ARGS[@]}" --tsv 2>"$CACHE_FILE.err" \
             > "$tmpfile"; then
             echo "$today" > "$CACHE_FILE"
             tail -n +2 "$tmpfile" | while IFS=$'\t' read -r _ start_time _ end_time title; do
@@ -133,7 +138,7 @@ if (( diff <= 0 )); then
     if (( $(date +%s) % 2 )); then
         echo "%{F$COLOR_LIVE}$ICON_LIVE ${start_time} ${title_part}%{F-}"
     else
-        echo "%{F$BG_COLOR}$ICON_LIVE ${start_time} ${title_part}%{F-}"
+        echo "$ICON_LIVE ${start_time} ${title_part}"
     fi
 elif (( diff <= WARN_MINUTES )); then
     # WARNING — 10 min before

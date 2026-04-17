@@ -108,7 +108,7 @@ i3-wm
 inetutils
 intel-ucode
 inxi
-iptables-nft
+iptables
 iwd
 jdk11-openjdk
 jfsutils

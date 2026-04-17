@@ -6,8 +6,6 @@ MOUNT="${1:-/}"
 LABEL="${2:-/}"
 WARN_PCT=90
 COLOR_WARN="#f45070"
-BG_COLOR="#$(sed -n 's/^background = #cc//p' ~/.config/polybar/colors.ini 2>/dev/null)"
-BG_COLOR="${BG_COLOR:-#282c34}"
 ICON="%{T2}󰋊%{T-}"
 
 read -r size used avail pct < <(df -BG "$MOUNT" 2>/dev/null | awk 'NR==2{gsub(/%/,"",$5); print $2,$3,$4,$5}')
@@ -19,7 +17,7 @@ if (( pct >= WARN_PCT )); then
     if (( $(date +%s) % 2 )); then
         echo "%{F$COLOR_WARN}$ICON $LABEL ${free}%{F-}"
     else
-        echo "%{F$BG_COLOR}$ICON $LABEL ${free}%{F-}"
+        echo "$ICON $LABEL ${free}"
     fi
 else
     echo "$ICON $LABEL ${free}"

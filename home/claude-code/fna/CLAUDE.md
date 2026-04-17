@@ -4,6 +4,7 @@ Global instructions for all projects. Project-specific CLAUDE.md files override 
 
 ## Philosophy
 
+- **Quality over speed** — always prefer the correct, production-grade solution over a quick fix. Understand the root cause before writing code. Use the recommended patterns for the framework version in use (e.g., SQLAlchemy 2.0 ORM bulk patterns, not legacy workarounds). If a fix feels hacky, it probably is — find the proper approach.
 - **No speculative features** — don't add features, flags, or configuration unless actively needed.
 - **No premature abstraction** — don't create utilities until you've written the same code three times.
 - **Clarity over cleverness** — prefer explicit, readable code over dense one-liners.
@@ -64,6 +65,12 @@ Two workflow plugins are installed: **Superpowers** (implementation discipline) 
 - **Review**: `/ce:review` — 15 specialized agents in parallel (security, performance, architecture, simplicity, data integrity, etc.).
 - **Compound**: `/ce:compound` — document learnings so future work benefits.
 - **Full auto**: `/lfg` (sequential) or `/slfg` (swarm/parallel) for autonomous end-to-end workflows.
+
+### Git Workflow
+
+- **Always use git worktrees** for feature work. Never modify code directly on `main`/`master`.
+- Use `/superpowers:using-git-worktrees` or `/compound-engineering:git-worktree` to create worktrees.
+- Each feature branch gets its own worktree — work in isolation, merge when done.
 
 ### When to use which
 
