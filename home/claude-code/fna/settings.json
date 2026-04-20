@@ -27,7 +27,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude-fna/title-hook.sh"
+            "command": "~/.claude-fna/title-hook.sh",
+            "async": true
           }
         ]
       }

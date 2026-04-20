@@ -27,7 +27,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude-own/title-hook.sh"
+            "command": "~/.claude-own/title-hook.sh",
+            "async": true
           }
         ]
       }
