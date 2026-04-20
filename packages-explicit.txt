@@ -186,7 +186,6 @@ numlockx
 nvidia-container-toolkit
 nvidia-hook
 nvidia-inst
-nvidia-open
 nvidia-open-lts
 obsidian
 openfortigui
@@ -250,6 +249,7 @@ snixembed
 sof-firmware
 speedtest-cli
 spotify-edge
+sshpass
 starship
 strongswan
 sudo
