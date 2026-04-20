@@ -167,7 +167,6 @@ numlockx
 nvidia-container-toolkit
 nvidia-hook
 nvidia-inst
-nvidia-open
 nvidia-open-lts
 obsidian
 openfortivpn
@@ -217,6 +216,7 @@ s-nail
 snixembed
 sof-firmware
 speedtest-cli
+sshpass
 starship
 strongswan
 sudo

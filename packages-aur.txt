@@ -30,10 +30,13 @@ ledger-udev
 libappindicator-gtk2
 libcutensor
 libcutensor-common
+libcutl
 libdbusmenu-gtk2
 libdigidocpp
 libgnome-keyring
 libsignal-client
+libxsd
+libxsd-frontend
 nordvpn-bin
 openfortigui
 pcloud-drive
@@ -57,4 +60,5 @@ tzupdate
 unionfs-fuse
 visual-studio-code-bin
 xautolock
+xsd
 zoho-mail-desktop
