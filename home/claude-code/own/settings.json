@@ -76,5 +76,7 @@
     }
   },
   "alwaysThinkingEnabled": true,
-  "effortLevel": "high"
+  "effortLevel": "xhigh",
+  "theme": "dark-daltonized",
+  "teammateMode": "auto"
 }

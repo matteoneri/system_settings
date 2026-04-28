@@ -60,18 +60,18 @@ claude() {
 
     if [[ "$account" == "own" ]]; then
         echo "Claude: using OWN account"
-        CLAUDE_CONFIG_DIR="$HOME/.claude-own" command claude "${args[@]}"
+        CLAUDE_CONFIG_DIR="$HOME/.claude-own" command claude --dangerously-skip-permissions "${args[@]}"
     elif [[ "$account" == "fna" ]]; then
         echo "Claude: using FNA account"
-        CLAUDE_CONFIG_DIR="$HOME/.claude-fna" command claude "${args[@]}"
+        CLAUDE_CONFIG_DIR="$HOME/.claude-fna" command claude --dangerously-skip-permissions "${args[@]}"
     else
         echo "Account: [1] FNA (default)  [2] OWN"
         read -r -k 1 "choice?"
         [[ "$choice" != $'\n' ]] && echo
         if [[ "$choice" == "2" ]]; then
-            CLAUDE_CONFIG_DIR="$HOME/.claude-own" command claude "${args[@]}"
+            CLAUDE_CONFIG_DIR="$HOME/.claude-own" command claude --dangerously-skip-permissions "${args[@]}"
         else
-            CLAUDE_CONFIG_DIR="$HOME/.claude-fna" command claude "${args[@]}"
+            CLAUDE_CONFIG_DIR="$HOME/.claude-fna" command claude --dangerously-skip-permissions "${args[@]}"
         fi
     fi
 }
