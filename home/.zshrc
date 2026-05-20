@@ -19,9 +19,8 @@ export PYENV_ROOT="$HOME/.pyenv"
 [[ -d $PYENV_ROOT/bin ]] && export PATH="$PYENV_ROOT/bin:$PATH"
 eval "$(pyenv init -)"
 
-# Force AUR builds to use system Python so g-ir-scanner and other
-# system tools can load their cpython-XYZ C extensions (see memory:
-# pyenv-aur-shadowing.md). Child processes inherit PYENV_VERSION.
+# Force AUR builds to use system Python (avoids pyenv shims breaking
+# g-ir-scanner et al.). See memory: pyenv-aur-shadowing.md.
 alias paru='PYENV_VERSION=system paru'
 alias makepkg='PYENV_VERSION=system makepkg'
 
@@ -30,9 +29,6 @@ eval "$(direnv hook zsh)"
 
 # Rust
 export PATH="$HOME/.cargo/bin:$PATH"
-
-# Java
-export JAVA_HOME=/usr/lib/jvm/java-17-openjdk
 
 # Android SDK
 export ANDROID_HOME="$HOME/Android/Sdk"
