@@ -13,6 +13,17 @@ return {
     },
   },
 
+  -- Git commands (:Git, :Gdiffsplit, :Gblame, etc.)
+  {
+    "tpope/vim-fugitive",
+    cmd = { "G", "Git", "Gdiffsplit", "Gread", "Gwrite", "Ggrep", "GMove", "GDelete", "GBrowse", "Gblame" },
+    keys = {
+      { "<leader>gs", "<cmd>Git<CR>", desc = "Git status" },
+      { "<leader>gb", "<cmd>Git blame<CR>", desc = "Git blame" },
+      { "<leader>gd", "<cmd>Gdiffsplit<CR>", desc = "Git diff" },
+    },
+  },
+
   -- Git signs in gutter
   {
     "lewis6991/gitsigns.nvim",
