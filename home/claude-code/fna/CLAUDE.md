@@ -68,9 +68,10 @@ Two workflow plugins are installed: **Superpowers** (implementation discipline) 
 
 ### Git Workflow
 
-- **Always use git worktrees** for feature work. Never modify code directly on `main`/`master`.
+- **Always use git worktrees** for feature work. Never develop directly on `main`/`master`.
 - Use `/superpowers:using-git-worktrees` or `/compound-engineering:git-worktree` to create worktrees.
-- Each feature branch gets its own worktree — work in isolation, merge when done.
+- Each feature branch gets its own worktree — work in isolation.
+- **Merging to `main`/`master`**: only when explicitly instructed; otherwise ask first when the work is ready to integrate.
 
 ### When to use which
 
