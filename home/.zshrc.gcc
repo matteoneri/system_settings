@@ -1,0 +1,95 @@
+# GCC EC2 zshrc — derived from .zshrc.portable, tuned for FNA's MAS GovTech
+# EC2 instances (ap-southeast-1, SSM-only access, IMDSv2-required, ML pipelines
+# running under docker). Every optional tool is guarded behind `command -v`, so
+# this loads cleanly on a bare AL2023/DLAMI box with nothing but zsh installed.
+#
+# Egress note: GCC eventually removes internet egress (VPC endpoints from day
+# one). oh-my-zsh installs via `git clone`, so it is present only while egress
+# exists or if baked into the AMI. The prompt block below uses OMZ if loaded,
+# else starship if present, else a native git-aware fallback — so an air-gapped
+# instance still gets a useful prompt with zero error lines.
+
+# ── Oh My Zsh (only if already installed) ────────────────────────
+if [[ -d "$HOME/.oh-my-zsh" ]]; then
+    export ZSH="$HOME/.oh-my-zsh"
+    ZSH_THEME=""
+    plugins=(git python docker aws)
+    source "$ZSH/oh-my-zsh.sh"
+fi
+
+# ── History ──────────────────────────────────────────────────────
+HISTFILE="$HOME/.zsh_history"
+HISTSIZE=50000
+SAVEHIST=50000
+setopt SHARE_HISTORY HIST_IGNORE_DUPS HIST_IGNORE_SPACE HIST_REDUCE_BLANKS
+
+# ── AWS region (explicit; do not wait on IMDS region detection) ──
+export AWS_DEFAULT_REGION="ap-southeast-1"
+export AWS_REGION="ap-southeast-1"
+
+# ── Editor ───────────────────────────────────────────────────────
+if command -v nvim &>/dev/null; then
+    export EDITOR='nvim'
+    export VISUAL='nvim'
+    alias vim='nvim'
+elif command -v vim &>/dev/null; then
+    export EDITOR='vim'
+    export VISUAL='vim'
+fi
+
+# ── Modern CLI aliases (only if the tool is installed) ───────────
+command -v eza &>/dev/null && {
+    alias ls='eza'
+    alias ll='eza -l --git'
+    alias la='eza -la --git'
+    alias tree='eza --tree'
+}
+command -v bat &>/dev/null && {
+    alias cat='bat --paging=never --style=plain'
+    alias catp='bat'
+}
+
+# ── IMDSv2 instance metadata helper ──────────────────────────────
+# IMDSv1 is disabled on every GCC instance, so a naive
+# `curl http://169.254.169.254/...` returns 401. `meta` fetches a
+# session token first, then queries the metadata tree.
+#   meta                      # list the metadata index
+#   meta instance-id          # this instance's id
+#   meta placement/region     # ap-southeast-1
+#   meta iam/security-credentials/   # attached role name
+meta() {
+    local path="${1:-}"
+    local token
+    token=$(curl -sf -X PUT "http://169.254.169.254/latest/api/token" \
+        -H "X-aws-ec2-metadata-token-ttl-seconds: 60") || {
+        print -u2 "meta: could not obtain IMDSv2 token (IMDS unreachable?)"
+        return 1
+    }
+    curl -sf -H "X-aws-ec2-metadata-token: $token" \
+        "http://169.254.169.254/latest/meta-data/${path}"
+    print  # metadata responses carry no trailing newline
+}
+
+# ── Prompt ───────────────────────────────────────────────────────
+# OMZ (if loaded) owns the prompt. Otherwise prefer starship; failing
+# that, a native vcs_info git-aware prompt so air-gapped boxes still
+# show branch + cwd.
+if [[ -z "$ZSH" ]]; then
+    if command -v starship &>/dev/null; then
+        eval "$(starship init zsh)"
+    else
+        autoload -Uz vcs_info
+        zstyle ':vcs_info:git:*' formats ' %F{magenta}(%b)%f'
+        setopt PROMPT_SUBST
+        precmd() { vcs_info }
+        PROMPT='%F{cyan}%n@%m%f %F{yellow}%~%f${vcs_info_msg_0_}
+%# '
+    fi
+fi
+
+# ── Smart cd (zoxide) ────────────────────────────────────────────
+command -v zoxide &>/dev/null && eval "$(zoxide init zsh)"
+
+# ── PATH extensions (guarded) ────────────────────────────────────
+[[ -d "$HOME/.local/bin" ]] && export PATH="$HOME/.local/bin:$PATH"
+[[ -d "$HOME/.cargo/bin" ]] && export PATH="$HOME/.cargo/bin:$PATH"
