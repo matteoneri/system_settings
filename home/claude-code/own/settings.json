@@ -75,7 +75,7 @@
   "alwaysThinkingEnabled": true,
   "effortLevel": "xhigh",
   "skipDangerousModePermissionPrompt": true,
+  "skipWorkflowUsageWarning": true,
   "theme": "dark-daltonized",
-  "teammateMode": "auto",
-  "skipWorkflowUsageWarning": true
+  "teammateMode": "auto"
 }
