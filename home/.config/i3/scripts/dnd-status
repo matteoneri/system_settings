@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+#
+# dnd-status — polybar Do-Not-Disturb indicator.
+#
+#   (no arg) | status   Print the indicator: a bell glyph while notifications
+#                       are active, switching to a sleep/Zzz glyph followed by
+#                       the number of notifications queued while dunst is
+#                       paused.
+#   clear               Drain the queued (waiting) notifications into dunst
+#                       history without a popup storm, preserving the current
+#                       pause state.
+#
+# Used by ~/.config/polybar/config.ini [module/dnd] and ~/.config/i3/scripts/dnd-toggle.
+
+GLYPH_DND="${DND_GLYPH:-󰒲}"            # nf-md-sleep (Zzz) — shown while DND on
+GLYPH_ACTIVE="${DND_GLYPH_ACTIVE:-󰂚}"  # nf-md-bell — shown while notifications active
+
+# render <paused: true|false> <count>  ->  indicator string
+#   not paused -> bell glyph (notifications active)
+#   paused     -> Zzz glyph, followed by the queued count when any are queued
+render() {
+    local paused="$1" count="$2"
+    if [ "$paused" != "true" ]; then
+        printf '%s' "$GLYPH_ACTIVE"
+        return 0
+    fi
+    if [ "${count:-0}" -gt 0 ] 2>/dev/null; then
+        printf '%s %s' "$GLYPH_DND" "$count"
+    else
+        printf '%s' "$GLYPH_DND"
+    fi
+}
+
+print_status() {
+    local paused count
+    paused="$(dunstctl is-paused 2>/dev/null || echo false)"
+    count="$(dunstctl count waiting 2>/dev/null || echo 0)"
+    printf '%s\n' "$(render "$paused" "$count")"
+}
+
+# Move every queued (waiting) notification into history without a visible storm.
+# Waiting notifications only promote to "displayed" while unpaused, so briefly
+# unpause if needed, drain, then restore the prior pause state.
+clear_backlog() {
+    local was_paused prev=-1 stall=0 i w d
+    was_paused="$(dunstctl is-paused 2>/dev/null || echo false)"
+    dunstctl set-paused false
+    for ((i = 0; i < 200; i++)); do
+        w="$(dunstctl count waiting)"
+        d="$(dunstctl count displayed)"
+        { [ "$w" -eq 0 ] && [ "$d" -eq 0 ]; } && break
+        if [ "$w" -eq "$prev" ]; then stall=$((stall + 1)); else stall=0; fi
+        prev="$w"
+        [ "$stall" -ge 6 ] && break
+        dunstctl close-all >/dev/null 2>&1 || true
+        sleep 0.15
+    done
+    [ "$was_paused" = "true" ] && dunstctl set-paused true
+    return 0
+}
+
+main() {
+    set -uo pipefail
+    case "${1:-status}" in
+        status) print_status ;;
+        clear)  clear_backlog ;;
+        *) printf 'usage: %s [status|clear]\n' "${0##*/}" >&2; exit 2 ;;
+    esac
+}
+
+if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
+    main "$@"
+fi

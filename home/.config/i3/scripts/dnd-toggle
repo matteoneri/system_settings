@@ -7,6 +7,8 @@ if dunstctl is-paused | grep -q "false"; then
     dunstctl set-paused true
 else
     dunstctl set-paused false
+    # Drain notifications queued during DND into history (no popup storm).
+    ~/.config/i3/scripts/dnd-status clear
     xautolock -enable
     notify-send -u low "Do Not Disturb" "OFF"
 fi
