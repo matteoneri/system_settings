@@ -20,6 +20,7 @@
       "Bash(git reset --hard*)"
     ]
   },
+  "model": "opus[1m]",
   "enableAllProjectMcpServers": false,
   "hooks": {
     "UserPromptSubmit": [

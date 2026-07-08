@@ -33,6 +33,7 @@ libgnome-keyring
 libsignal-client
 libxsd
 libxsd-frontend
+mbedtls2
 nordvpn-bin
 openfortigui
 pcloud-drive

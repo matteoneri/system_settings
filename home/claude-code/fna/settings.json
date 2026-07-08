@@ -19,6 +19,7 @@
       "Bash(git reset --hard*)"
     ]
   },
+  "model": "opus[1m]",
   "enableAllProjectMcpServers": false,
   "hooks": {
     "UserPromptSubmit": [
@@ -28,6 +29,11 @@
             "type": "command",
             "command": "~/.claude-fna/title-hook.sh",
             "async": true
+          },
+          {
+            "type": "command",
+            "command": "date \"+[User message sent: %a %Y-%m-%d %H:%M:%S %Z (UTC%z)]\"",
+            "timeout": 5
           }
         ]
       }
