@@ -7,6 +7,11 @@ blueberry
 brave-bin
 bridge-utils
 docker-rootless-extras
+electron34
+electron35
+electron36
+electron37
+electron38
 electron40-bin
 figma-linux-bin
 flutter-bin

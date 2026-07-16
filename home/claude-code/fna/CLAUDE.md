@@ -87,6 +87,16 @@ Two workflow plugins are installed: **Superpowers** (implementation discipline) 
 
 Do not duplicate these workflows in project CLAUDE.md files. Project files should only add project-specific conventions.
 
+## FNA session bus (this machine only)
+
+The FNA sessions (`fna_payments`, `fna_models`, `paynet_aws_containers`) exchange ephemeral
+signals via `~/Documents/Projects/ActiveProjects/FNA/.session-bus/` — protocol in its README.
+Send with `send.sh <your-identity> "msg"` (single-writer, append-only); sibling messages
+arrive automatically at the next prompt (UserPromptSubmit hook). For live delivery during
+active co-work, arm a persistent Monitor (`tail -n 0 -F`) on the sibling mailboxes.
+**Bus = transport, never record**: anything durable or Federico-facing still goes to the
+coordination board/inboxes in `paynet_aws_containers`.
+
 ## Commits
 
 - Imperative mood, ≤72 char subject line, one logical change per commit.
