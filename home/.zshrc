@@ -39,6 +39,13 @@ export PATH="$PATH:$ANDROID_HOME/cmdline-tools/latest/bin"
 # zkstack completion
 [[ -f "$HOME/.zsh/completion/_zkstack.zsh" ]] && source "$HOME/.zsh/completion/_zkstack.zsh"
 
+# Claude Code: shared ephemeral scratch dir. Avoids the startup error when the
+# intel-hub containers pre-create /tmp/claude-1000 as root. Shared by FNA and
+# OWN accounts — safe, because this holds only per-session scratch; conversation
+# history lives in $CLAUDE_CONFIG_DIR (~/.claude-fna vs ~/.claude-own), not here.
+export CLAUDE_CODE_TMPDIR="$HOME/.cache/claude-tmp"
+[[ -d "$CLAUDE_CODE_TMPDIR" ]] || mkdir -p "$CLAUDE_CODE_TMPDIR"
+
 # Claude CLI account auto-switch based on project directory
 claude() {
     local account=""

@@ -251,6 +251,7 @@ speedtest-cli
 spotify-edge
 sshpass
 starship
+strace
 strongswan
 sudo
 sysfsutils

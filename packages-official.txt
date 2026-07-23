@@ -218,6 +218,7 @@ sof-firmware
 speedtest-cli
 sshpass
 starship
+strace
 strongswan
 sudo
 sysfsutils
