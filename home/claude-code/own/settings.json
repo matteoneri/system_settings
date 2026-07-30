@@ -20,7 +20,7 @@
       "Bash(git reset --hard*)"
     ]
   },
-  "model": "opus[1m]",
+  "model": "claude-fable-5[1m]",
   "enableAllProjectMcpServers": false,
   "hooks": {
     "UserPromptSubmit": [
@@ -57,7 +57,8 @@
   "enabledPlugins": {
     "superpowers@claude-plugins-official": true,
     "compound-engineering@compound-engineering-plugin": true,
-    "frontend-design@claude-plugins-official": true
+    "frontend-design@claude-plugins-official": true,
+    "rust-analyzer-lsp@claude-plugins-official": true
   },
   "extraKnownMarketplaces": {
     "superpowers-marketplace": {
