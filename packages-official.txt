@@ -10,6 +10,7 @@ arc-gtk-theme-eos
 archlinux-xdg-menu
 asciidoc
 aspell
+ast-grep
 awesome-terminal-fonts
 aws-cli-v2
 b43-fwcutter

@@ -48,16 +48,15 @@ Fix every warning from linters, type checkers, compilers, and tests. If a warnin
 
 ## Workflow
 
-Two workflow plugins are installed: **Superpowers** (implementation discipline) and **Compound Engineering** (planning depth + multi-agent review). Use each for what it's best at:
+Two workflow plugins are installed. **Compound Engineering is the default for
+brainstorming, planning, and doing the work.** Superpowers supplies discipline
+*inside* that flow — it is not a competing pipeline.
 
-### Implementation (Superpowers)
+This overrides the Superpowers `using-superpowers` skill, which otherwise routes
+creative work to `superpowers:brainstorming`. Its own instruction-priority rules
+say these instructions win, so follow this section instead.
 
-- **TDD**: `/superpowers:test-driven-development` — red-green-refactor, always.
-- **Debugging**: `/superpowers:systematic-debugging` — 4-phase root cause analysis, not symptom treatment.
-- **Verification**: `/superpowers:verification-before-completion` — evidence before assertions.
-- **Subagent execution**: `/superpowers:subagent-driven-development` — fresh agent per task, two-stage review.
-
-### Planning & Review (Compound Engineering)
+### Default pipeline (Compound Engineering)
 
 Names changed in compound-engineering 3.x: the `/ce:*` colon form is gone, and so is
 `/slfg` — its swarm behaviour was folded into `/lfg`.
@@ -71,6 +70,19 @@ Names changed in compound-engineering 3.x: the `/ce:*` colon form is gone, and s
 - **Simplify**: `/ce-simplify-code` — tighten settled code for clarity and reuse.
 - **Full auto**: `/lfg` — the whole autonomous pipeline, hands-off: plan → implement → review → PR → watch CI.
 
+Do **not** reach for the Superpowers equivalents of these phases:
+`superpowers:brainstorming`, `superpowers:writing-plans`,
+`superpowers:executing-plans`, `superpowers:subagent-driven-development`.
+
+### Discipline inside the work (Superpowers)
+
+Use these *within* `/ce-work`, not instead of it:
+
+- **TDD**: `/superpowers:test-driven-development` — red-green-refactor, always.
+- **Debugging**: `/superpowers:systematic-debugging` — 4-phase root cause analysis, not symptom treatment.
+- **Verification**: `/superpowers:verification-before-completion` — evidence before assertions.
+- **Parallel independent tasks**: `/superpowers:dispatching-parallel-agents`.
+
 ### Git Workflow
 
 - **Always use git worktrees** for feature work. Never develop directly on `main`/`master`.
@@ -83,8 +95,8 @@ Names changed in compound-engineering 3.x: the `/ce:*` colon form is gone, and s
 | Task | Use |
 |------|-----|
 | Starting a feature | `/ce-brainstorm` → `/ce-plan` |
-| Implementing | Superpowers TDD + subagent execution |
-| Quick bug fix | `/superpowers:systematic-debugging` |
+| Executing a plan | `/ce-work` — with TDD applied inside it |
+| Quick bug fix | `/superpowers:systematic-debugging` (or `/ce-debug`) |
 | Pre-merge review | `/ce-code-review` |
 | Claiming work is done | `/superpowers:verification-before-completion` |
 | Capturing learnings | `/ce-compound` |
