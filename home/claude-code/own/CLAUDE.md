@@ -86,7 +86,7 @@ Use these *within* `/ce-work`, not instead of it:
 ### Git Workflow
 
 - **Always use git worktrees** for feature work. Never develop directly on `main`/`master`.
-- Use `/superpowers:using-git-worktrees` or `/ce-worktree` to create worktrees.
+- Use `/ce-worktree` to create them — for a fresh branch, or to attach a worktree to an existing branch/PR/commit.
 - Each feature branch gets its own worktree — work in isolation.
 - **Merging to `main`/`master`**: only when explicitly instructed; otherwise ask first when the work is ready to integrate.
 
