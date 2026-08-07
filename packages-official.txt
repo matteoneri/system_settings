@@ -83,6 +83,7 @@ gimp
 git
 git-filter-repo
 glances
+glow
 gnome-keyring
 graphviz
 grub

@@ -38,13 +38,16 @@ libgnome-keyring
 libsignal-client
 libxsd
 libxsd-frontend
+litehtml0.9
 mbedtls2
 nordvpn-bin
 openfortigui
+outline
 pcloud-drive
 postman-bin
 proton-mail-bin
 python-async_generator
+python-pkg_resources
 qdigidoc4
 qtkeychain-qt5
 reiserfsprogs

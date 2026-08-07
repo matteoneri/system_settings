@@ -203,5 +203,10 @@ eval "$(zoxide init zsh)"
 # Starship prompt
 eval "$(starship init zsh)"
 
+# Claude Code terminal titles: keep the task title Claude sets, instead of letting
+# oh-my-zsh re-title on every prompt. Sourced last so its precmd hook runs after
+# starship's and wins. See ~/Documents/Projects/ActiveProjects/OWN/claude-code-terminal-title
+source "$HOME/Documents/Projects/ActiveProjects/OWN/claude-code-terminal-title/shell/terminal-title.zsh"
+
 # System info on terminal open
 fastfetch

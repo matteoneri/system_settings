@@ -95,6 +95,7 @@ gimp
 git
 git-filter-repo
 glances
+glow
 gnome-keyring
 graphviz
 grub
@@ -192,6 +193,7 @@ openfortigui
 openfortivpn
 openssh
 os-prober
+outline
 pacman-contrib
 papirus-icon-theme
 paru

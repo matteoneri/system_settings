@@ -20,7 +20,7 @@
       "Bash(git reset --hard*)"
     ]
   },
-  "model": "claude-fable-5[1m]",
+  "model": "opus[1m]",
   "enableAllProjectMcpServers": false,
   "hooks": {
     "UserPromptSubmit": [
@@ -58,7 +58,8 @@
     "superpowers@claude-plugins-official": true,
     "compound-engineering@compound-engineering-plugin": true,
     "frontend-design@claude-plugins-official": true,
-    "rust-analyzer-lsp@claude-plugins-official": true
+    "rust-analyzer-lsp@claude-plugins-official": true,
+    "terminal-title@claude-code-terminal-title": true
   },
   "extraKnownMarketplaces": {
     "superpowers-marketplace": {
@@ -72,10 +73,16 @@
         "source": "github",
         "repo": "EveryInc/compound-engineering-plugin"
       }
+    },
+    "claude-code-terminal-title": {
+      "source": {
+        "source": "directory",
+        "path": "/home/matteo/Documents/Projects/ActiveProjects/OWN/claude-code-terminal-title"
+      }
     }
   },
   "alwaysThinkingEnabled": true,
-  "effortLevel": "xhigh",
+  "effortLevel": "medium",
   "skipDangerousModePermissionPrompt": true,
   "skipWorkflowUsageWarning": true,
   "theme": "dark-daltonized",
