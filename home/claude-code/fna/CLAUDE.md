@@ -59,17 +59,22 @@ Two workflow plugins are installed: **Superpowers** (implementation discipline) 
 
 ### Planning & Review (Compound Engineering)
 
-- **Brainstorm**: `/ce:brainstorm` — explore requirements and approaches before planning.
-- **Plan**: `/ce:plan` — implementation plans with parallel research agents.
-- **Work**: `/ce:work` — execute with worktrees and task tracking.
-- **Review**: `/ce:review` — 15 specialized agents in parallel (security, performance, architecture, simplicity, data integrity, etc.).
-- **Compound**: `/ce:compound` — document learnings so future work benefits.
-- **Full auto**: `/lfg` (sequential) or `/slfg` (swarm/parallel) for autonomous end-to-end workflows.
+Names changed in compound-engineering 3.x: the `/ce:*` colon form is gone, and so is
+`/slfg` — its swarm behaviour was folded into `/lfg`.
+
+- **Brainstorm**: `/ce-brainstorm` — turn a vague idea into right-sized requirements before planning.
+- **Plan**: `/ce-plan` — structured plans for multi-step work.
+- **Work**: `/ce-work` — execute a plan or concrete prompt end-to-end.
+- **Review**: `/ce-code-review` — structured review for bugs, regressions, tests, standards.
+- **Compound**: `/ce-compound` — document a solved problem as a durable repo learning.
+- **Debug**: `/ce-debug` — diagnosis loop for errors, stack traces, regressions.
+- **Simplify**: `/ce-simplify-code` — tighten settled code for clarity and reuse.
+- **Full auto**: `/lfg` — the whole autonomous pipeline, hands-off: plan → implement → review → PR → watch CI.
 
 ### Git Workflow
 
 - **Always use git worktrees** for feature work. Never develop directly on `main`/`master`.
-- Use `/superpowers:using-git-worktrees` or `/compound-engineering:git-worktree` to create worktrees.
+- Use `/superpowers:using-git-worktrees` or `/ce-worktree` to create worktrees.
 - Each feature branch gets its own worktree — work in isolation.
 - **Merging to `main`/`master`**: only when explicitly instructed; otherwise ask first when the work is ready to integrate.
 
@@ -77,12 +82,12 @@ Two workflow plugins are installed: **Superpowers** (implementation discipline) 
 
 | Task | Use |
 |------|-----|
-| Starting a feature | `/ce:brainstorm` → `/ce:plan` |
+| Starting a feature | `/ce-brainstorm` → `/ce-plan` |
 | Implementing | Superpowers TDD + subagent execution |
 | Quick bug fix | `/superpowers:systematic-debugging` |
-| Pre-merge review | `/ce:review` |
+| Pre-merge review | `/ce-code-review` |
 | Claiming work is done | `/superpowers:verification-before-completion` |
-| Capturing learnings | `/ce:compound` |
+| Capturing learnings | `/ce-compound` |
 | Parallel independent tasks | `/superpowers:dispatching-parallel-agents` |
 
 Do not duplicate these workflows in project CLAUDE.md files. Project files should only add project-specific conventions.
