@@ -71,14 +71,20 @@ instructions, so this says *when to reach for what*, not how to run it.
 - **Diagnose** — `/ce-debug` errors, stack traces, regressions, stuck investigations
 - **Tighten** — `/ce-simplify-code` after implementation, before review · `/ce-optimize` metric-driven loops: retrieval relevance, clustering quality, prompt quality, build perf
 - **Verify** — `/ce-code-review` bugs, regressions, tests, standards · `/ce-test-browser` pages touched by the branch · `/ce-dogfood` autonomous browser QA of the diff · `/ce-polish` dev server + browser iteration
-- **Ship** — `/ce-commit` · `/ce-commit-push-pr` · `/ce-resolve-pr-feedback` · `/ce-babysit-pr` watch a PR to merge-ready
+- **Ship** — `/ce-commit` then push and raise the PR by hand (see Bitbucket note below)
 - **Learn** — `/ce-compound` capture a solved problem · `/ce-compound-refresh` audit stale or superseded learnings
 - **Continuity** — `/ce-handoff` hand off or resume across sessions · `/ce-explain` durable teaching artifact for a concept or diff
 - **Meta** — `/ce-setup` CE health + repo-local config
 - **Full auto** — `/lfg` plan → implement → review → commit → push → PR → watch CI, no check-ins
 
-Browser skills need the `agent-browser` CLI (`npm i -g agent-browser && agent-browser install`);
-the PR skills need `gh`.
+Browser skills need the `agent-browser` CLI (`npm i -g agent-browser && agent-browser install`).
+
+**FNA repos are on Bitbucket** (`bitbucket.org:fnard/…`), and every CE PR skill drives
+`gh`, which only speaks to GitHub. So **pushing and raising PRs here is manual.** Do not
+attempt `/ce-commit-push-pr`, `/ce-babysit-pr`, or `/ce-resolve-pr-feedback` on FNA work —
+they will fail against Bitbucket. `/ce-commit` is plain git and works fine. `/ce-code-review`
+also works, since it can review a local diff without a PR. If a PR description would help,
+ask for the body as text and paste it into Bitbucket by hand.
 
 Out of scope here: `/ce-test-xcode` (no Apple toolchain on this machine),
 `/ce-riffrec-feedback-analysis` (Riffrec captures), `/ce-retune` (skill-corpus
@@ -114,8 +120,7 @@ Use these *within* `/ce-work`, not instead of it:
 | Quick bug fix | `/superpowers:systematic-debugging` (or `/ce-debug`) |
 | Before review | `/ce-simplify-code` |
 | Pre-merge review | `/ce-code-review` |
-| Opening / shepherding a PR | `/ce-commit-push-pr` → `/ce-babysit-pr` |
-| Acting on review comments | `/ce-resolve-pr-feedback` |
+| Committing | `/ce-commit` — push + PR by hand (Bitbucket) |
 | Tuning a measurable outcome | `/ce-optimize` (retrieval, prompts, perf) |
 | Running out of context | `/ce-handoff` before the session ends |
 | Claiming work is done | `/superpowers:verification-before-completion` |

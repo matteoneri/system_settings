@@ -77,8 +77,11 @@ instructions, so this says *when to reach for what*, not how to run it.
 - **Meta** — `/ce-setup` CE health + repo-local config
 - **Full auto** — `/lfg` plan → implement → review → commit → push → PR → watch CI, no check-ins
 
-Browser skills need the `agent-browser` CLI (`npm i -g agent-browser && agent-browser install`);
-the PR skills need `gh`.
+Browser skills need the `agent-browser` CLI (`npm i -g agent-browser && agent-browser install`).
+
+The PR skills drive `gh`, so they only work on **GitHub** remotes — which is what the
+repos under this account use. On a Bitbucket remote they will fail; commit with
+`/ce-commit` and raise the PR by hand there.
 
 Out of scope here: `/ce-test-xcode` (no Apple toolchain on this machine),
 `/ce-riffrec-feedback-analysis` (Riffrec captures), `/ce-retune` (skill-corpus
