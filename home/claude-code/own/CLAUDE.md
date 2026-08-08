@@ -61,14 +61,29 @@ say these instructions win, so follow this section instead.
 Names changed in compound-engineering 3.x: the `/ce:*` colon form is gone, and so is
 `/slfg` — its swarm behaviour was folded into `/lfg`.
 
-- **Brainstorm**: `/ce-brainstorm` — turn a vague idea into right-sized requirements before planning.
-- **Plan**: `/ce-plan` — structured plans for multi-step work.
-- **Work**: `/ce-work` — execute a plan or concrete prompt end-to-end.
-- **Review**: `/ce-code-review` — structured review for bugs, regressions, tests, standards.
-- **Compound**: `/ce-compound` — document a solved problem as a durable repo learning.
-- **Debug**: `/ce-debug` — diagnosis loop for errors, stack traces, regressions.
-- **Simplify**: `/ce-simplify-code` — tighten settled code for clarity and reuse.
-- **Full auto**: `/lfg` — the whole autonomous pipeline, hands-off: plan → implement → review → PR → watch CI.
+Phase-ordered routing table for the dev loop. Each skill carries its own
+instructions, so this says *when to reach for what*, not how to run it.
+
+- **Frame** — `/ce-ideate` generate and score options · `/ce-brainstorm` refine *your* idea into requirements · `/ce-pov` decisive second opinion on an approach, doc, or adopt/don't call
+- **Plan** — `/ce-plan` structured plan (or deepen an existing one) · `/ce-doc-review` stress-test a plan/spec through role lenses
+- **Isolate** — `/ce-worktree` before touching code
+- **Build** — `/ce-work` execute a plan or clear build request end-to-end
+- **Diagnose** — `/ce-debug` errors, stack traces, regressions, stuck investigations
+- **Tighten** — `/ce-simplify-code` after implementation, before review · `/ce-optimize` metric-driven loops: retrieval relevance, clustering quality, prompt quality, build perf
+- **Verify** — `/ce-code-review` bugs, regressions, tests, standards · `/ce-test-browser` pages touched by the branch · `/ce-dogfood` autonomous browser QA of the diff · `/ce-polish` dev server + browser iteration
+- **Ship** — `/ce-commit` · `/ce-commit-push-pr` · `/ce-resolve-pr-feedback` · `/ce-babysit-pr` watch a PR to merge-ready
+- **Learn** — `/ce-compound` capture a solved problem · `/ce-compound-refresh` audit stale or superseded learnings
+- **Continuity** — `/ce-handoff` hand off or resume across sessions · `/ce-explain` durable teaching artifact for a concept or diff
+- **Meta** — `/ce-setup` CE health + repo-local config
+- **Full auto** — `/lfg` plan → implement → review → commit → push → PR → watch CI, no check-ins
+
+Browser skills need the `agent-browser` CLI (`npm i -g agent-browser && agent-browser install`);
+the PR skills need `gh`.
+
+Out of scope here: `/ce-test-xcode` (no Apple toolchain on this machine),
+`/ce-riffrec-feedback-analysis` (Riffrec captures), `/ce-retune` (skill-corpus
+benchmarking). Product-side rather than dev loop, use deliberately: `/ce-strategy`,
+`/ce-ideate` upstream framing, `/ce-product-pulse`, `/ce-promote`, `/ce-proof`, `/ce-sweep`.
 
 Do **not** reach for the Superpowers equivalents of these phases:
 `superpowers:brainstorming`, `superpowers:writing-plans`,
@@ -94,10 +109,15 @@ Use these *within* `/ce-work`, not instead of it:
 
 | Task | Use |
 |------|-----|
-| Starting a feature | `/ce-brainstorm` → `/ce-plan` |
+| Starting a feature | `/ce-worktree` → `/ce-brainstorm` → `/ce-plan` |
 | Executing a plan | `/ce-work` — with TDD applied inside it |
 | Quick bug fix | `/superpowers:systematic-debugging` (or `/ce-debug`) |
+| Before review | `/ce-simplify-code` |
 | Pre-merge review | `/ce-code-review` |
+| Opening / shepherding a PR | `/ce-commit-push-pr` → `/ce-babysit-pr` |
+| Acting on review comments | `/ce-resolve-pr-feedback` |
+| Tuning a measurable outcome | `/ce-optimize` (retrieval, prompts, perf) |
+| Running out of context | `/ce-handoff` before the session ends |
 | Claiming work is done | `/superpowers:verification-before-completion` |
 | Capturing learnings | `/ce-compound` |
 | Parallel independent tasks | `/superpowers:dispatching-parallel-agents` |

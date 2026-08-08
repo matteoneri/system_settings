@@ -83,6 +83,7 @@ galculator
 gimp
 git
 git-filter-repo
+github-cli
 glances
 glow
 gnome-keyring
