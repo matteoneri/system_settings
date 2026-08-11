@@ -29,6 +29,7 @@ eval "$(direnv hook zsh)"
 
 # Rust
 export PATH="$HOME/.cargo/bin:$PATH"
+export SCCACHE_CACHE_SIZE="40G"
 
 # Android SDK
 export ANDROID_HOME="$HOME/Android/Sdk"

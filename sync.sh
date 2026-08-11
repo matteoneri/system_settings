@@ -11,6 +11,10 @@ echo "Syncing system configs to $REPO_DIR ..."
 cp ~/.zshrc "$HOME_DIR/.zshrc"
 cp ~/.zsh/completion/_zkstack.zsh "$HOME_DIR/.zsh/completion/_zkstack.zsh"
 
+# Cargo (sccache wrapper + cargo-nextest/hack/machete aliases)
+mkdir -p "$HOME_DIR/.cargo"
+cp ~/.cargo/config.toml "$HOME_DIR/.cargo/config.toml"
+
 # X11
 cp ~/.Xresources "$HOME_DIR/.Xresources"
 

@@ -172,6 +172,7 @@ nvidia-hook
 nvidia-inst
 nvidia-open-lts
 obsidian
+openai-codex
 openfortivpn
 openssh
 os-prober

@@ -1,0 +1,19 @@
+# ~/.cargo/config.toml
+[build]
+rustc-wrapper = "sccache"
+
+# Shortcuts for the tool flag-combinations that are tedious to retype.
+# Plain `cargo deny check`, `cargo machete` and `cargo hack` already work as
+# subcommands once installed — only the non-obvious invocations are aliased.
+[alias]
+# cargo-nextest — the everyday test runner
+nt = "nextest run"
+# ...and the debugging variant: run everything, show each failure in full
+ntf = "nextest run --no-fail-fast --failure-output immediate-final"
+
+# cargo-hack — the point of it is feature combinations, which are verbose to type
+hack-powerset = "hack check --feature-powerset --no-dev-deps"
+hack-each = "hack check --each-feature --no-dev-deps"
+
+# cargo-machete — unused-dependency scan
+unused = "machete"

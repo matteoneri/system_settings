@@ -46,6 +46,31 @@ Fix every warning from linters, type checkers, compilers, and tests. If a warnin
 | `fd` | find | fast file finder |
 | `ast-grep` | — | AST-based code search, prefer over rg for structural queries |
 
+### Rust projects
+
+Toolchain is rustup-managed; these four live in `~/.cargo/bin`, with aliases in `~/.cargo/config.toml`:
+
+| tool | use | alias |
+|------|-----|-------|
+| `cargo-nextest` | test runner: per-test isolation, retries, profiles | `cargo nt` / `cargo ntf` |
+| `cargo-hack` | feature-combination checks — catches broken feature gates | `cargo hack-powerset` / `cargo hack-each` |
+| `cargo-deny` | licences, security advisories, banned/duplicate deps, source allow-list | — |
+| `cargo-machete` | unused-dependency scan | `cargo unused` |
+
+Use all four where they improve the flow. Two need per-project config — copy the canonical
+versions from `~/Documents/Projects/system_settings/templates/rust/`:
+
+- **`.config/nextest.toml`** at the workspace root. Nextest has **no** user-level config, so
+  every workspace needs its own. Ships a `default` profile for local runs and a `ci` profile
+  with retries, no fail-fast, and JUnit output.
+- **`deny.toml`** at the workspace root. Lean and enforcing: widen a rule by adding to
+  `allow` / `exceptions` / `skip` **with a reason**, never by downgrading a severity.
+
+`cargo hack` and `cargo machete` need no config. Expect the first `cargo deny check` in a new
+project to fail on real findings (unlisted permissive licences, live security advisories) —
+triage them rather than loosening the policy. An unpublished workspace crate reports as
+"unlicensed" until it declares `publish = false` or a `license` field.
+
 ## Workflow
 
 Two workflow plugins are installed. **Compound Engineering is the default for
@@ -103,7 +128,10 @@ Use these *within* `/ce-work`, not instead of it:
 
 ### Git Workflow
 
-- **Always use git worktrees** for feature work. Never develop directly on `main`/`master`.
+- **Always use git worktrees** for feature work. Never develop directly on `main`/`master`,
+  and **never switch the shared checkout's branch** — several sessions may be live in the
+  same repo at once, so `git checkout -b` there hijacks their working tree. Add a worktree
+  instead; check `git worktree list` first to see who else is active.
 - Use `/ce-worktree` to create them — for a fresh branch, or to attach a worktree to an existing branch/PR/commit.
 - Each feature branch gets its own worktree — work in isolation.
 - **Merging to `main`/`master`**: only when explicitly instructed; otherwise ask first when the work is ready to integrate.

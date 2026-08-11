@@ -1,0 +1,26 @@
+# .config/nextest.toml — goes at the WORKSPACE ROOT (nextest has no user-level config).
+# Two profiles: the default for local runs, `ci` for unattended runs.
+#   local:  cargo nt                (alias for `cargo nextest run`)
+#   CI:     cargo nextest run --profile ci
+
+[profile.default]
+# Local runs should fail fast and stay quiet on success.
+retries = 0
+fail-fast = true
+failure-output = "immediate"
+status-level = "pass"
+# Surface a hung test instead of waiting for the whole run to time out.
+slow-timeout = { period = "30s", terminate-after = 4 }
+
+[profile.ci]
+# Unattended runs: never stop at the first failure — one full report per run is
+# worth more than an early exit, and a retry distinguishes flaky from broken.
+retries = 2
+fail-fast = false
+failure-output = "immediate-final"
+final-status-level = "flaky"
+slow-timeout = { period = "120s", terminate-after = 3 }
+
+[profile.ci.junit]
+# Machine-readable results at target/nextest/ci/junit.xml for a CI reporter.
+path = "junit.xml"
