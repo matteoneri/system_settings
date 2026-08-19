@@ -1,10 +1,19 @@
 # ~/.cargo/config.toml
-[build]
-rustc-wrapper = "sccache"
+#
+# No rustc-wrapper here, and that is not a judgement about sccache. The fnet-presettle
+# repository sets `build.rustc-wrapper = "sccache"` in its own .cargo/config.toml, which
+# cargo discovers independently of CARGO_HOME, so builds in that workspace are cached
+# whether or not this file says anything.
+#
+# A ~30-line comment block used to live here arguing that sccache "keys on the output
+# directory" and must not be re-added. That was measured but wrong: --out-dir is explicitly
+# excluded from sccache's cache key. The probe varied the target directory by EXPORTING
+# CARGO_TARGET_DIR, which sccache does hash, so the output directory only looked causal.
+#
+# The correct account, with the source line numbers and the two verification methods, is in
+# fnet-presettle/CLAUDE.md, section "The build standard". Read that rather than re-deriving
+# it here; it has now been derived wrongly twice.
 
-# Shortcuts for the tool flag-combinations that are tedious to retype.
-# Plain `cargo deny check`, `cargo machete` and `cargo hack` already work as
-# subcommands once installed — only the non-obvious invocations are aliased.
 [alias]
 # cargo-nextest — the everyday test runner
 nt = "nextest run"
