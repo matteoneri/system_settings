@@ -177,7 +177,8 @@ _settings_sync_check() {
 _settings_sync_check
 
 # Modern CLI aliases
-alias ls='eza'
+# `ls` is deliberately NOT aliased to eza: eza's -t is --time FIELD, not sort-by-mtime,
+# so `ls -t` silently fails and scripts/agents parsing it get an empty result.
 alias ll='eza -l --git'
 alias la='eza -la --git'
 alias tree='eza --tree'
@@ -211,3 +212,6 @@ source "$HOME/Documents/Projects/ActiveProjects/OWN/claude-code-terminal-title/s
 
 # System info on terminal open
 fastfetch
+
+# Machine-local secrets and overrides (API keys etc.) — not synced to system_settings
+[[ -f ~/.zshrc.local ]] && source ~/.zshrc.local
