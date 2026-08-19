@@ -14,7 +14,21 @@ on_refresh() {
     touch "$LOCK"
     sleep 3  # wait for network to settle
     rm -f /tmp/polybar-gcal-cache
-    ~/.config/polybar/launch.sh &
+
+    # Launching right after resume can race the display: with the lid still
+    # closed X may report no connected output, so launch.sh kills the bar
+    # without replacing it. Wait for a connected output, launch, then verify
+    # a bar is actually standing; retry if not.
+    local attempt _
+    for attempt in 1 2 3; do
+        for _ in $(seq 30); do
+            xrandr --query 2>/dev/null | grep -q " connected" && break
+            sleep 1
+        done
+        ~/.config/polybar/launch.sh
+        sleep 3
+        pgrep -u "$UID" -x polybar >/dev/null && return
+    done
 }
 
 # Resume from suspend
