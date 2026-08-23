@@ -26,15 +26,20 @@ minors=$(awk -v m="$MOUNT" '$5==m {split($3,a,":"); print a[2]}' /proc/self/moun
 pkill -TERM -x pcloud.bin 2>/dev/null || true
 pkill -TERM -x pCloud.AppImage 2>/dev/null || true
 
-# 3. Give it time to exit cleanly. The loop breaks as soon as pCloud is gone, so
-#    a quick shutdown costs nothing; only a slow one pays, and pcloud-suspend.service
-#    bounds the whole run at 30s anyway. 5s was too short in practice: a pCloud up
-#    ~43min with 509MB resident and 90MB swapped missed it and was SIGKILLed, which
-#    risks tearing a sync client mid-write. Wait on the AppImage runtime too, so it
-#    gets the chance to unmount its own squashfs rather than being killed under it.
+# 3. Give it a few seconds to exit cleanly. The loop breaks as soon as pCloud is
+#    gone, so a fast shutdown costs nothing.
+#
+#    Do NOT raise this hoping for a graceful exit: measured over five real lid
+#    closes (2026-08-23), pCloud was SIGKILLed on every one, at 5s AND at 12s of
+#    grace. In the fast cases the main process died ~1s after SIGTERM -- likely the
+#    AppImage runtime killing its own child rather than the pkill -KILL below. In
+#    the slow cases (~30-45min uptime, ~550MB resident) it outlasted 12s and was
+#    killed anyway. Waiting longer only delays the suspend it is meant to speed up.
+#    Raising this needs evidence of a clean SIGTERM exit, which does not exist yet:
+#    watch for the absence of "pcloud.service: Failed with result 'signal'".
 i=0
 while { pgrep -x pcloud.bin >/dev/null 2>&1 || pgrep -x pCloud.AppImage >/dev/null 2>&1; } \
-      && [ "$i" -lt 12 ]; do
+      && [ "$i" -lt 5 ]; do
     sleep 1
     i=$((i + 1))
 done
