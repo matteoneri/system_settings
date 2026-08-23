@@ -22,7 +22,11 @@ mkdir -p "$STATE_DIR" && chmod 700 "$STATE_DIR"
 # Single instance: a live pid in the pidfile wins. --once is a manual check and
 # does not claim the pidfile, so it can run alongside the watcher.
 if [[ -z "$ONCE" ]]; then
-    if [[ -f "$PIDFILE" ]] && kill -0 "$(cat "$PIDFILE" 2>/dev/null)" 2>/dev/null; then
+    # kill -0 alone would trust a recycled pid belonging to something else, so
+    # confirm the process is this script before yielding to it.
+    running_pid=$(cat "$PIDFILE" 2>/dev/null)
+    if [[ -n "$running_pid" ]] && kill -0 "$running_pid" 2>/dev/null \
+        && tr '\0' ' ' < "/proc/$running_pid/cmdline" 2>/dev/null | rg -q "session-snapshot"; then
         exit 0
     fi
     echo $$ > "$PIDFILE"
@@ -31,22 +35,28 @@ fi
 
 # --- kitty enumeration -------------------------------------------------------
 
-# One JSON object per kitty window, keyed later by X11 window id. kitty nests
-# platform_window_id on the os-window, not the window, so pair them explicitly.
+# One JSON object per kitty OS window, keyed later by its X11 window id.
 kitty_windows() {
     local pid sock
-    for pid in $(pgrep -x kitty); do
+    for pid in $(pgrep -x -u "$UID" kitty); do
         sock="unix:@kitty-$pid"
         kitty @ --to "$sock" ls 2>/dev/null | jq -c --arg sock "$sock" '
-            .[] as $ow |
-            $ow.tabs[]? | .windows[]? |
-            {
+            # One entry per OS window, because that is what i3 sees and what
+            # platform_window_id identifies. A window with several tabs or splits
+            # would otherwise emit siblings sharing that id, and keying a map by
+            # it would silently keep whichever pane came last. Take the focused
+            # pane of the focused tab, falling back to the first of each.
+            .[] as $ow
+            | ((($ow.tabs // []) | map(select(.is_focused)) + $ow.tabs) | .[0]) as $tab
+            | (((($tab.windows // []) | map(select(.is_focused))) + ($tab.windows // [])) | .[0]) as $w
+            | select($w != null)
+            | {
                 win_id: $ow.platform_window_id,
                 sock: $sock,
-                kitty_win: .id,
-                cwd: .cwd,
-                user_vars: (.user_vars // {}),
-                fg: [ .foreground_processes[]? | { pid: .pid, cmd: (.cmdline[0] // "") } ]
+                kitty_win: $w.id,
+                cwd: $w.cwd,
+                user_vars: ($w.user_vars // {}),
+                fg: [ $w.foreground_processes[]? | { pid: .pid, cmd: (.cmdline[0] // "") } ]
             }' 2>/dev/null
     done
 }
@@ -143,7 +153,7 @@ sanitize_title() {
 claude_user_name() {
     local config_dir="$1" pid="$2" record="$1/sessions/$2.json"
     [[ -r "$record" ]] || return 1
-    jq -e 'has("nameSource") | not' "$record" >/dev/null 2>&1 || return 1
+    jq -e '(has("nameSource") | not) and (.kind == "interactive")' "$record" >/dev/null 2>&1 || return 1
     jq -r '.name // empty' "$record"
 }
 
@@ -185,7 +195,7 @@ apply_titles() {
 # --- snapshot ---------------------------------------------------------------
 
 write_snapshot() {
-    local kitty_json tree_json map_json out
+    local kitty_json tree_json map_json out tmp
     kitty_json=$(kitty_windows | jq -s '.')
     if [[ -z "$kitty_json" || "$kitty_json" == "[]" ]]; then
         notify-send "Session snapshot" "No kitty window responded; check allow_remote_control"
@@ -244,7 +254,8 @@ write_snapshot() {
         }')
 
     [[ -z "$out" ]] && return 1
-    ( umask 077; printf '%s\n' "$out" > "$SNAPSHOT.tmp" ) && mv -f "$SNAPSHOT.tmp" "$SNAPSHOT"
+    tmp="$SNAPSHOT.tmp.$$"
+    ( umask 077; printf '%s\n' "$out" > "$tmp" ) && mv -f "$tmp" "$SNAPSHOT"
 }
 
 restore_in_progress() {

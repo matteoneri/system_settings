@@ -13,6 +13,7 @@ SKIP_MARKER="$STATE_DIR/skip"
 RESTORE_LOCK="$STATE_DIR/restore.lock"
 RESTORE_DONE="/tmp/i3-session-restore-done"
 LAYOUT_DIR="$STATE_DIR/layouts"
+LOG="$STATE_DIR/restore.log"
 SETTLE_TRIES=45
 PLACE_TRIES=40
 UUID_RE='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
@@ -94,6 +95,14 @@ fi
 
 # --- guards ------------------------------------------------------------------
 
+# dunst is restarted by theme-switch during boot and can be left paused by
+# dnd-toggle, so a notification alone can vanish. Every message also goes to a
+# log the user can read after the fact.
+report() {
+    printf '%s %s\n' "$(date '+%F %T')" "$1" >> "$LOG"
+    notify-send "Session restore" "$1"
+}
+
 # Handshake the watcher waits on before its first tick. It lives in /tmp, which
 # is tmpfs here, so every boot starts without it. Written on every exit path,
 # including the skip and no-snapshot paths — those take no lock, and without the
@@ -103,7 +112,7 @@ trap 'rm -f "$RESTORE_LOCK"; : > "$RESTORE_DONE"' EXIT
 # One boot can opt out; the marker self-clears so the next boot restores.
 if [[ -f "$SKIP_MARKER" ]]; then
     rm -f "$SKIP_MARKER"
-    notify-send "Session restore" "Skipped for this boot"
+    report "Skipped for this boot"
     exit 0
 fi
 
@@ -111,7 +120,7 @@ fi
 [[ -f "$SNAPSHOT" ]] || exit 0
 
 if ! jq -e . "$SNAPSHOT" >/dev/null 2>&1; then
-    notify-send "Session restore" "Snapshot is unreadable; not restoring"
+    report "Snapshot is unreadable; not restoring"
     exit 1
 fi
 
@@ -119,7 +128,7 @@ fi
 # line at the same time, and during a settle wait of up to SETTLE_TRIES seconds
 # an unlocked tick would replace the snapshot being restored with a capture of
 # the empty boot desktop.
-mkdir -p "$LAYOUT_DIR" && chmod 700 "$LAYOUT_DIR"
+mkdir -p "$LAYOUT_DIR" && chmod 700 "$STATE_DIR" "$LAYOUT_DIR"
 # Generated layout filenames carry a per-run slot index, so they differ between
 # boots and would otherwise pile up instead of being overwritten.
 find "$LAYOUT_DIR" -maxdepth 1 -name '*.json' -delete 2>/dev/null
@@ -158,6 +167,7 @@ valid_config_dir()     { [[ "$1" == "$HOME/.claude-fna" || "$1" == "$HOME/.claud
 
 restored=0
 failed=0
+swept=0
 next_index=1
 used_sessions=" "
 focused=$(jq -r '.focused_workspace // empty' "$SNAPSHOT")
@@ -167,16 +177,21 @@ snap_age_h=$(( ( $(date +%s) - $(stat -c %Y "$SNAPSHOT" 2>/dev/null || date +%s)
 
 while IFS= read -r ws; do
     if ! valid_workspace_name "$ws"; then
-        notify-send "Session restore" "Skipped a workspace with an unusable name"
+        report "Skipped a workspace with an unusable name"
         failed=$((failed + 1))
         continue
     fi
 
     plan=$(plan_workspace "$SNAPSHOT" "$ws" "$next_index")
-    [[ -z "$plan" ]] && continue
+    if [[ -z "$plan" ]]; then
+        report "Could not plan workspace $ws; skipped it"
+        failed=$((failed + 1))
+        continue
+    fi
     slot_count=$(echo "$plan" | jq '.terminals | length')
     (( slot_count == 0 )) && continue
 
+    touch "$RESTORE_LOCK"
     layout_file="$LAYOUT_DIR/ws-$next_index.json"
     # append_layout takes a stream of top-level containers, not a JSON array.
     ( umask 077; echo "$plan" | jq -c '.layout[]' > "$layout_file" )
@@ -185,12 +200,12 @@ while IFS= read -r ws; do
     # is focused, so a failed switch would build this workspace's layout on top
     # of a different one.
     if ! i3-msg "workspace \"$ws\"" 2>&1 | rg -q '"success":true'; then
-        notify-send "Session restore" "Could not switch to workspace $ws; skipped it"
+        report "Could not switch to workspace $ws; skipped it"
         failed=$((failed + 1))
         continue
     fi
     if ! i3-msg "append_layout $layout_file" 2>&1 | rg -q '"success":true'; then
-        notify-send "Session restore" "Could not lay out workspace $ws"
+        report "Could not lay out workspace $ws"
         failed=$((failed + 1))
         continue
     fi
@@ -203,7 +218,7 @@ while IFS= read -r ws; do
         cdir=$(jq -r '.config_dir // ""' <<< "$term")
 
         if ! valid_cwd "$cwd"; then
-            notify-send "Session restore" "Skipped $inst: directory is gone"
+            report "Skipped $inst: directory is gone"
             failed=$((failed + 1))
             continue
         fi
@@ -214,7 +229,7 @@ while IFS= read -r ws; do
         # come back as shells.
         if [[ -n "$sid" && "$used_sessions" == *" $sid "* ]]; then
             kitty --name "$inst" --directory "$cwd" & disown
-            notify-send "Session restore" "$inst: session already resumed in another pane, opened a shell"
+            report "$inst: session already resumed in another pane, opened a shell"
             failed=$((failed + 1))
             restored=$((restored + 1))
             sleep 0.4
@@ -232,7 +247,7 @@ while IFS= read -r ws; do
                         env "CLAUDE_CONFIG_DIR=$cdir" claude --resume "$sid" & disown
                 else
                     kitty --name "$inst" --directory "$cwd" & disown
-                    notify-send "Session restore" "$inst: session unusable, opened a shell"
+                    report "$inst: session unusable, opened a shell"
                     failed=$((failed + 1))
                 fi
                 ;;
@@ -241,7 +256,7 @@ while IFS= read -r ws; do
                     kitty --name "$inst" --directory "$cwd" -e codex resume "$sid" & disown
                 else
                     kitty --name "$inst" --directory "$cwd" & disown
-                    notify-send "Session restore" "$inst: session unusable, opened a shell"
+                    report "$inst: session unusable, opened a shell"
                     failed=$((failed + 1))
                 fi
                 ;;
@@ -270,7 +285,8 @@ while IFS= read -r ws; do
     while IFS= read -r con_id; do
         [[ -z "$con_id" ]] && continue
         i3-msg "[con_id=$con_id] kill" >/dev/null 2>&1
-        failed=$((failed + 1))
+        report "Workspace $ws: a terminal never appeared; removed its empty slot"
+        swept=$((swept + 1))
     done <<< "$unfilled"
 
     next_index=$((next_index + slot_count))
@@ -280,8 +296,10 @@ if [[ -n "$focused" ]] && valid_workspace_name "$focused"; then
     i3-msg "workspace \"$focused\"" >/dev/null 2>&1
 fi
 
-if (( failed > 0 )); then
-    notify-send "Session restore" "$restored terminal(s) restored, $failed problem(s) (snapshot ${snap_age_h}h old)"
-else
-    notify-send "Session restore" "$restored terminal(s) restored (snapshot ${snap_age_h}h old)"
-fi
+summary="$restored terminal(s) restored"
+(( failed > 0 )) && summary+=", $failed problem(s)"
+# Counted apart from failures: an empty slot is usually the downstream effect of
+# a failure already counted above, so folding them together would double-report
+# one bad directory as two problems.
+(( swept > 0 )) && summary+=", $swept empty slot(s) removed"
+report "$summary (snapshot ${snap_age_h}h old)"

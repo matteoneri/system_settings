@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "focused_workspace": "E",
+  "workspaces": [
+    { "name": "E", "tree": [
+      { "type": "con", "layout": "tabbed", "percent": 0, "nodes": [
+        { "type": "leaf", "percent": 0, "restore": true, "cwd": "/tmp/fixture-h", "agent": null, "session_id": null, "config_dir": null, "inexact": false },
+        { "type": "leaf", "percent": 0, "restore": true, "cwd": "/tmp/fixture-i", "agent": null, "session_id": null, "config_dir": null, "inexact": false },
+        { "type": "leaf", "percent": 0, "restore": true, "cwd": "/tmp/fixture-j", "agent": null, "session_id": null, "config_dir": null, "inexact": false }
+      ] }
+    ] }
+  ]
+}

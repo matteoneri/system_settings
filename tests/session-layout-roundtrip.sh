@@ -6,7 +6,10 @@
 #
 # Run: bash tests/session-layout-roundtrip.sh
 
-RESTORE="${RESTORE_SCRIPT:-$HOME/.config/i3/scripts/session-restore}"
+# Default to the copy tracked in this repo, not the one installed on the
+# machine, so the test exercises what a reviewer is reading.
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+RESTORE="${RESTORE_SCRIPT:-$REPO_ROOT/home/.config/i3/scripts/session-restore}"
 FIXTURES="$(cd "$(dirname "$0")/fixtures" && pwd)"
 FAILED=0
 
@@ -65,12 +68,22 @@ assert_jq single.json C '.layout[0] | has("swallows")' "top-level leaf becomes a
 assert_jq single.json C '.terminals | length == 1' "one terminal"
 
 echo "== a workspace with nothing restorable yields no layout =="
+# Must succeed AND emit an empty layout. Accepting empty output would also pass
+# if the script crashed and printed nothing.
 plan=$("$RESTORE" --plan "$FIXTURES/unrestorable.json" D 2>/dev/null)
-if [[ -z "$plan" ]] || echo "$plan" | jq -e '(.layout | length) == 0' >/dev/null 2>&1; then
-    pass "no layout emitted for an all-unrestorable workspace"
+rc=$?
+if (( rc != 0 )); then
+    fail "all-unrestorable workspace should still succeed, exited $rc"
+elif echo "$plan" | jq -e '(.layout | length) == 0 and (.terminals | length) == 0' >/dev/null 2>&1; then
+    pass "all-unrestorable workspace yields an empty layout, not a crash"
 else
-    fail "expected no layout for an all-unrestorable workspace, got: $plan"
+    fail "expected an empty layout for an all-unrestorable workspace, got: $plan"
 fi
+
+echo "== siblings with no recorded ratio split evenly =="
+assert_jq zerosum.json E '.layout[0].nodes | length == 3' "all three terminals kept"
+assert_jq zerosum.json E '[.layout[0].nodes[].percent] | add | (. - 1.0) | fabs < 0.0001' "zero-sum siblings renormalized to sum 1"
+assert_jq zerosum.json E '[.layout[0].nodes[].percent] | all((. - (1/3)) | fabs < 0.0001)' "split evenly rather than left at zero"
 
 echo "== bad input is rejected with a message, not a silent exit =="
 for bad in "$FIXTURES/malformed.json:X:malformed snapshot" "$FIXTURES/does-not-exist.json:X:missing snapshot file" "$FIXTURES/single.json:NO_SUCH_WS:unknown workspace name"; do
