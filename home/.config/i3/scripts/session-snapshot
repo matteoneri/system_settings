@@ -9,6 +9,7 @@ PIDFILE="$STATE_DIR/snapshot.pid"
 RESTORE_LOCK="$STATE_DIR/restore.lock"
 RESTORE_DONE="/tmp/i3-session-restore-done"
 INTERVAL=30
+TITLE_POLL=3
 LOCK_STALE=300
 FIRST_TICK_WAIT=180
 TITLE_VAR="I3SESSION_TITLE"
@@ -194,6 +195,25 @@ apply_titles() {
     done <<< "$windows"
 }
 
+# Fingerprint of just the name fields across all session records. A rename
+# changes this; the constant status/updatedAt churn does not, so the kitty work
+# below runs on an actual rename rather than every few seconds.
+names_fingerprint() {
+    jq -rs 'map((.pid|tostring) + ":" + (.name // "") + ":" + (.nameSource // "")) | sort | join(",")' \
+        "$HOME"/.claude-*/sessions/*.json 2>/dev/null
+}
+
+# The title half of a tick: cheap enough to run on every rename.
+title_pass() {
+    local kitty_meta
+    kitty_meta=$(kitty_windows | jq -c --arg v "$TITLE_VAR" \
+        '(.fg // []) as $f
+         | (($f | map(select((.cmd | split("/") | last) == "claude")) | .[0]) // $f[0] // {}) as $p
+         | { sock: .sock, kitty_win: .kitty_win, owned: (.user_vars[$v] // ""),
+             pid: ($p.pid // ""), cmd: ($p.cmd // "") }' 2>/dev/null)
+    [[ -n "$kitty_meta" ]] && apply_titles "$kitty_meta"
+}
+
 # --- snapshot ---------------------------------------------------------------
 
 write_snapshot() {
@@ -270,13 +290,7 @@ restore_in_progress() {
 
 tick() {
     restore_in_progress && return 0
-    local kitty_meta
-    kitty_meta=$(kitty_windows | jq -c --arg v "$TITLE_VAR" \
-        '(.fg // []) as $f
-         | (($f | map(select((.cmd | split("/") | last) == "claude")) | .[0]) // $f[0] // {}) as $p
-         | { sock: .sock, kitty_win: .kitty_win, owned: (.user_vars[$v] // ""),
-             pid: ($p.pid // ""), cmd: ($p.cmd // "") }' 2>/dev/null)
-    [[ -n "$kitty_meta" ]] && apply_titles "$kitty_meta"
+    title_pass
     write_snapshot
 }
 
@@ -295,7 +309,23 @@ while [[ ! -e "$RESTORE_DONE" ]] && (( waited < FIRST_TICK_WAIT )); do
     waited=$((waited + 2))
 done
 
+last_names=""
+next_snapshot=0
 while true; do
-    tick
-    sleep "$INTERVAL"
+    if ! restore_in_progress; then
+        # Titles follow a rename within TITLE_POLL; the snapshot keeps its own,
+        # slower cadence because capturing the whole tree is the expensive half.
+        names=$(names_fingerprint)
+        if [[ "$names" != "$last_names" ]]; then
+            title_pass
+            last_names="$names"
+        fi
+        if (( $(date +%s) >= next_snapshot )); then
+            # tick() re-runs the title pass as well, so a title lost to another
+            # writer heals on this cadence even though no name changed.
+            tick
+            next_snapshot=$(( $(date +%s) + INTERVAL ))
+        fi
+    fi
+    sleep "$TITLE_POLL"
 done

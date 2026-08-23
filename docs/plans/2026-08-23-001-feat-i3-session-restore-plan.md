@@ -78,7 +78,7 @@ A second, smaller irritation shares the same data. A session renamed with `/rena
 - R18. A Claude Code session the user named shows that name as its terminal title; a session named by the title hook keeps its hook-generated title.
 - R19. The name persists for the life of the session rather than being replaced by the next hook-generated summary.
 - R20. When a named session ends, its terminal stops claiming that name.
-- R21. Renaming a session updates its terminal title within one watcher interval, with no restart required.
+- R21. Renaming a session updates its terminal title within a few seconds, without waiting for the next snapshot and without a restart.
 
 ### Key Flows
 
@@ -188,7 +188,8 @@ Existing patterns to mirror:
 - KTD7. **Express the skip affordance as a marker file in the KTD6 state directory that the restore consumes.** It matches the file-existence-as-state idiom in `home/.config/i3/scripts/ws-toggle-icons`, needs no config edit, and self-clears so a skip applies to one boot. The cited precedent supplies the idiom only, not its location — `/tmp` is tmpfs here and is cleared by the very reboot the marker must survive. Governs R15.
 - KTD8. **Lock the terminal title when applying a user-set session name** (session-settled: user-approved — chosen over letting the generated summary keep overwriting it: the name has to survive the rest of the session to be useful). The name is stripped of control characters and length-capped before the write. Governs R19.
 - KTD9. **Distinguish a user-set name from a generated one by the session record's own name-source field**, not by pattern-matching the name, and treat any value other than an explicit user-set marker as not-user-set. Governs R18.
-- KTD10. **Write the snapshot atomically to a temporary file and rename it into place, every 30 seconds.** A crash mid-write must not leave a torn snapshot, which is the one input the restore cannot recover from; the interval sets both R1's loss window and R21's title latency. Governs R1, R5, R21.
+- KTD10. **Write the snapshot atomically to a temporary file and rename it into place, every 30 seconds.** A crash mid-write must not leave a torn snapshot, which is the one input the restore cannot recover from; the interval sets R1's loss window. Governs R1, R5.
+- KTD17. **Drive the title override off a change in the session records, not the snapshot cadence.** A rename is an interactive act, so a 30-second wait reads as broken. A short poll compares only the name fields across records — cheap, and blind to the constant status churn — and does the kitty work only when a name actually changed. The snapshot cadence still re-applies titles, so one lost to another writer heals without a rename. Governs R21.
 - KTD11. **Use `jq` for all JSON handling.** It is the tool the existing i3 scripts already use, and it avoids the pyenv-shimmed `python3`. Governs R2, R3, R6.
 - KTD12. **Serialise the watcher against the restore with a restore-in-progress lock in the KTD6 state directory.** Both scripts autostart together, so without it the watcher's first tick captures the empty boot desktop and atomically replaces the snapshot the restore is still waiting to read. The restore claims the lock before reading and releases it after its sweep; the watcher skips a tick without writing while the lock is held, and treats a lock older than a bounded timeout as stale. Governs R1, R10.
 - KTD13. **Launch the resumed agent as the binary directly, with an explicit account configuration in its environment, never through an interactive login shell.** Mirrors `project-launch`. The zsh `claude` wrapper adds a permission-bypass flag on every branch and falls through to an interactive account prompt for directories outside the two project trees, which would both strip the agent's prompts and block the restore forever. Governs R13.
@@ -307,7 +308,7 @@ The watcher's single-instance guard exists for manual double-starts, not for res
   - A session the user renamed shows that name within one interval.
   - A session left with a generated name keeps its hook-generated title.
   - The title hook does not overwrite a user-set name on the next prompt.
-  - Renaming a session again updates the title on the next tick.
+  - Renaming a session again updates the title within seconds, not on the next snapshot.
   - A named session that exits leaves its terminal no longer showing the name.
   - A name containing control characters is written sanitized.
   - Applying the same name twice does not thrash the title.

@@ -48,9 +48,16 @@ kitty window title, and keeps it for the life of the session. A session the CLI
 named itself keeps its generated title.
 
 This needs both halves to work: the watcher applies the name and locks the
-title, and `title-hook.sh` in each account exits early for a renamed session so
-it stops generating a competing title. The session record is what distinguishes
-the two — it carries a name-source field only when the name was generated.
+title, and `title-hook.sh` in each account exits early once the watcher has
+stamped the window, so it stops generating a competing title. The session record
+is what distinguishes a chosen name from a generated one — it carries a
+name-source field only when the name was generated.
+
+A rename shows up within a few seconds. The watcher polls the session records
+for a changed name on a short cycle and only then talks to kitty, so it reacts
+to a rename without waiting for the next snapshot, and without doing kitty work
+every few seconds for nothing. A title lost to some other writer is re-applied
+on the slower snapshot cycle instead.
 
 ## Checking it by hand
 
