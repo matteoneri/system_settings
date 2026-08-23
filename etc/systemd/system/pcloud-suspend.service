@@ -1,0 +1,32 @@
+[Unit]
+Description=Stop pCloud and release its FUSE mount before sleep
+Documentation=man:systemd-sleep(8)
+# systemd-suspend.service freezes user.slice for the WHOLE of its run, the
+# /usr/lib/systemd/system-sleep/ hooks included (see systemd-sleep(8)). A hook
+# there therefore runs too late to help the freezer: the freeze has already
+# been attempted, and a live pCloud FUSE mount makes it time out (60s) before
+# the machine finally suspends. Ordering the teardown Before= the suspend
+# service puts it outside that window, which was the point of the teardown.
+Before=systemd-suspend.service
+Before=systemd-hibernate.service
+Before=systemd-suspend-then-hibernate.service
+Before=systemd-hybrid-sleep.service
+
+OnFailure=pcloud-sleep-failed@%n.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/pcloud-teardown
+# pcloud-teardown allows pCloud 5s to exit cleanly before killing it. Both
+# timeouts matter: TimeoutStartSec bounds the run, and TimeoutStopSec bounds the
+# kill phase that a start-timeout triggers. Leaving the latter at the manager
+# default (90s) would make the real worst case ~120s of delayed suspend, since
+# systemd-suspend.service cannot start until this job concludes either way.
+TimeoutStartSec=30
+TimeoutStopSec=10
+
+[Install]
+WantedBy=systemd-suspend.service
+WantedBy=systemd-hibernate.service
+WantedBy=systemd-suspend-then-hibernate.service
+WantedBy=systemd-hybrid-sleep.service

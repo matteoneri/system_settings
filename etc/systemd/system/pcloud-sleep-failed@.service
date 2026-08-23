@@ -1,0 +1,16 @@
+[Unit]
+Description=Report a failed pCloud sleep-path unit (%i) to the desktop
+
+[Service]
+Type=oneshot
+# The journal already records the failure. This exists because nobody reads the
+# journal: the original dead-pCloud bug sat logged and unnoticed for weeks. It
+# reaches the session over the same user bus pcloud-resume.service uses, which
+# is sound here because pcloud-resume's ExecCondition already turns the
+# "no user manager" case into a skip rather than a failure -- so any unit that
+# actually reaches OnFailure has a live session to notify.
+# Leading '-': a failed notification must never itself fail the sleep path.
+ExecStart=-/usr/bin/systemd-run --user --machine=matteo@.host --collect --quiet \
+    /usr/bin/notify-send -u critical -a pCloud "pCloud sleep path failed" \
+    "%i failed. pCloud may not be running. Check: systemctl status %i"
+TimeoutStartSec=20

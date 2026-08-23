@@ -1,0 +1,40 @@
+[Unit]
+Description=Restart pCloud after resume
+Documentation=man:systemd-sleep(8)
+# user.slice stays frozen for the whole of systemd-suspend.service, so anything
+# run from inside it that touches the user session fails with "Cannot start
+# frozen unit Session N of User matteo". Ordering After= the suspend service
+# means this runs once user.slice has been thawed.
+After=systemd-suspend.service
+After=systemd-hibernate.service
+After=systemd-suspend-then-hibernate.service
+After=systemd-hybrid-sleep.service
+
+OnFailure=pcloud-sleep-failed@%n.service
+
+[Service]
+Type=oneshot
+# Linger=no, so logging out tears the user manager down. A lid close at the
+# greeter then has nothing to relaunch; ExecCondition skips the unit (inactive)
+# instead of leaving it permanently failed the way a doomed ExecStart would.
+ExecCondition=/usr/bin/systemctl is-active --quiet user@1000.service
+# Hand the launch to the user manager rather than forking it here: a process
+# forked from a oneshot unit is killed when that unit deactivates. Going
+# through the user bus also gives pCloud the session environment (DISPLAY,
+# XAUTHORITY, DBUS_SESSION_BUS_ADDRESS) that the user manager already holds.
+# What guarantees no surviving instance is pcloud-teardown, NOT this restart:
+# a pCloud started by dex at login lives in the session scope rather than this
+# unit's cgroup, so restart would start a second one beside it, not replace it.
+# Leading '-': a user-side failure (AppImage gone, launcher unreadable) belongs
+# on the user's own pcloud.service, not as a permanently degraded system unit.
+ExecStart=-/usr/bin/systemctl --user --machine=matteo@.host restart pcloud.service
+# Type=oneshot disables the start timeout by default (TimeoutStartUSec=infinity).
+# This call blocks on a socket the user session owns, so without a bound a wedged
+# peer leaves a root process resident until reboot. Observed happy path: 143ms.
+TimeoutStartSec=30
+
+[Install]
+WantedBy=systemd-suspend.service
+WantedBy=systemd-hibernate.service
+WantedBy=systemd-suspend-then-hibernate.service
+WantedBy=systemd-hybrid-sleep.service

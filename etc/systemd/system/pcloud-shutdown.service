@@ -1,0 +1,17 @@
+[Unit]
+Description=Stop pCloud and release its FUSE mount before filesystems unmount
+# Start after /home is mounted, so at shutdown this unit is stopped (ExecStop
+# runs) BEFORE /home is unmounted. Before=umount.target keeps it ahead of the
+# unmount phase.
+After=home.mount
+Before=umount.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/true
+ExecStop=/usr/local/bin/pcloud-teardown
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

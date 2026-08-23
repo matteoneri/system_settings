@@ -1,0 +1,63 @@
+#!/bin/sh
+# /usr/local/bin/pcloud-teardown
+# Stop pCloud and release its FUSE mount so it can't stall the kernel freezer
+# (suspend/hibernate) or the shutdown unmount. Runs as root.
+#
+# Critical detail: pCloud mounts with auto_unmount, so killing pcloud makes
+# /home/matteo/pCloudDrive vanish while its worker threads may still be stuck in
+# uninterruptible D-state (request_wait_answer) on the FUSE connection. SIGKILL
+# cannot end a D-state task — only aborting the FUSE connection releases it. So
+# we capture the connection minor BEFORE killing (while the mount still exists)
+# and abort it unconditionally, rather than gating the abort on the mount still
+# being present (which auto_unmount would have already removed).
+set -u
+
+MOUNT=/home/matteo/pCloudDrive
+
+abort_conn() {
+    [ -w "/sys/fs/fuse/connections/$1/abort" ] && \
+        echo 1 > "/sys/fs/fuse/connections/$1/abort" 2>/dev/null || true
+}
+
+# 1. Capture pCloud's FUSE connection minor(s) while the mount still exists.
+minors=$(awk -v m="$MOUNT" '$5==m {split($3,a,":"); print a[2]}' /proc/self/mountinfo 2>/dev/null)
+
+# 2. Ask pCloud to quit.
+pkill -TERM -x pcloud.bin 2>/dev/null || true
+pkill -TERM -x pCloud.AppImage 2>/dev/null || true
+
+# 3. Give it a few seconds to exit cleanly.
+i=0
+while pgrep -x pcloud.bin >/dev/null 2>&1 && [ "$i" -lt 5 ]; do sleep 1; i=$((i + 1)); done
+
+# 4. Abort pCloud's FUSE connection(s) unconditionally — releases D-state
+#    waiters even after auto_unmount removed the mountpoint. Fallback: if the
+#    mount was already gone before we could capture it (pcloud pre-wedged),
+#    abort any FUSE connection still waiting on an unanswered request.
+for m in $minors; do abort_conn "$m"; done
+if [ -z "$minors" ]; then
+    # Only an ORPHANED connection can be pCloud's at this point: auto_unmount has
+    # already taken its mountpoint away, so it has no /proc/self/mountinfo entry.
+    # Every bystander still does -- gvfsd-fuse, the xdg-document portal, the
+    # AppImage's own squashfuse mount -- and aborting one of those returns EIO on
+    # it for the rest of the session, silently, since this script suppresses all
+    # errors and exits 0. Selecting purely on waiting>0, as this once did, hit
+    # those bystanders on any suspend taken while pCloud was not mounted.
+    live=$(awk '{for (i = 7; i <= NF; i++) if ($i == "-") { if ($(i + 1) ~ /^fuse/) { split($3, a, ":"); print a[2] } ; break }}' \
+        /proc/self/mountinfo 2>/dev/null)
+    for d in /sys/fs/fuse/connections/*/; do
+        [ -d "$d" ] || continue
+        minor=$(basename "$d")
+        for l in $live; do
+            [ "$l" = "$minor" ] && continue 2
+        done
+        w=$(cat "$d/waiting" 2>/dev/null || echo 0)
+        [ "$w" -gt 0 ] 2>/dev/null && abort_conn "$minor"
+    done
+fi
+
+# 5. Lazy-unmount anything left, then hard-kill the remainder.
+umount -l "$MOUNT" 2>/dev/null || true
+pkill -KILL -x pcloud.bin 2>/dev/null || true
+pkill -KILL -x pCloud.AppImage 2>/dev/null || true
+exit 0

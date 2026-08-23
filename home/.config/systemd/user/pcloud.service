@@ -1,0 +1,24 @@
+[Unit]
+Description=pCloud Drive
+
+# Deliberately has no [Install] section. At login pCloud is started by
+# `dex --autostart` from ~/.config/autostart/pcloud.desktop, which pCloud
+# rewrites on every run and so cannot be removed; enabling this unit too would
+# start a second instance. It exists so that pcloud-resume.service has a unit
+# to start in the user manager after a suspend.
+
+[Service]
+Type=simple
+# Straight at the package-owned binary, not ~/.config/pcloud/pcloud-launcher.sh:
+# pCloud rewrites that launcher on every start, it is not backed up, and its
+# rename-by-inode fallback is dead code here -- /opt/pcloud/pCloud.AppImage is
+# owned by the pcloud-drive package, root-owned and 0755, so it is never renamed
+# in place, and the hardcoded inode would go stale on the next package upgrade.
+ExecStart=/opt/pcloud/pCloud.AppImage
+# pcloud-teardown stops pCloud with SIGTERM before every suspend, which is an
+# expected end for this unit rather than a fault. SIGKILL is deliberately NOT
+# listed: the teardown only reaches its SIGKILL fallback when pCloud failed to
+# exit cleanly, and that is worth seeing as a failed unit. Listing it would also
+# mask the kernel OOM killer, which is a realistic end for a ~500MB Electron app
+# and must not be reported as a clean stop.
+SuccessExitStatus=SIGTERM

@@ -90,6 +90,33 @@ cp ~/.config/starship.toml "$HOME_DIR/.config/starship.toml"
 # Screenlayout (optional)
 cp ~/.screenlayout/monitor.sh "$HOME_DIR/.screenlayout/monitor.sh" 2>/dev/null || true
 
+# Power / sleep (pCloud FUSE teardown around suspend + lid behaviour)
+# Backup only — restore.sh does not replay etc/, same as the pacman hook.
+# 20-fix-freeze-sessions.conf is load-bearing and owned by no package: nvidia-utils
+# ships a drop-in disabling the user.slice freeze, and that file reverses it. Without
+# it a restored machine silently stops freezing user sessions on suspend.
+mkdir -p "$REPO_DIR/etc/systemd/system" "$REPO_DIR/etc/systemd/logind.conf.d" \
+         "$REPO_DIR/etc/systemd/system/systemd-suspend.service.d" \
+         "$REPO_DIR/usr/local/bin" "$HOME_DIR/.config/systemd/user"
+for f in /etc/systemd/system/pcloud-suspend.service \
+         /etc/systemd/system/pcloud-resume.service \
+         /etc/systemd/system/pcloud-shutdown.service \
+         /etc/systemd/system/pcloud-sleep-failed@.service \
+         /etc/systemd/system/systemd-suspend.service.d/20-fix-freeze-sessions.conf \
+         /etc/systemd/logind.conf.d/10-lid.conf \
+         /usr/local/bin/pcloud-teardown; do
+    if [ -f "$f" ]; then
+        cp "$f" "$REPO_DIR/${f#/}"
+    else
+        echo "  skip (absent): $f"
+    fi
+done
+if [ -f ~/.config/systemd/user/pcloud.service ]; then
+    cp ~/.config/systemd/user/pcloud.service "$HOME_DIR/.config/systemd/user/pcloud.service"
+else
+    echo "  skip (absent): ~/.config/systemd/user/pcloud.service"
+fi
+
 # Package lists
 pacman -Qe --quiet | sort > "$REPO_DIR/packages-explicit.txt"
 pacman -Qm --quiet | sort > "$REPO_DIR/packages-aur.txt"
