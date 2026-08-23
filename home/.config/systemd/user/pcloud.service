@@ -22,3 +22,14 @@ ExecStart=/opt/pcloud/pCloud.AppImage
 # mask the kernel OOM killer, which is a realistic end for a ~500MB Electron app
 # and must not be reported as a clean stop.
 SuccessExitStatus=SIGTERM
+
+# No Restart= here, deliberately. Code-review finding #12 (2026-08-23) proposed
+# Restart=on-failure and was REJECTED: it is unsafe in combination with the
+# SuccessExitStatus line above. Once SIGKILL is no longer a success status, a
+# teardown that has to hard-kill pCloud leaves this unit failed, and a restart
+# policy would then relaunch pCloud a few seconds later -- during the suspend
+# sequence, re-creating the very FUSE mount pcloud-teardown just released, right
+# before the freeze. Each change is safe alone and harmful together. Crash
+# recovery would need a policy inhibited for the sleep window; see
+# docs/solutions/power-management/pcloud-restart-policy-rejected.md in
+# system_settings.

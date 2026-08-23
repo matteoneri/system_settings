@@ -4,6 +4,9 @@ set -euo pipefail
 
 echo "Scanning for secrets..."
 
+# Each pattern may have a same-index entry in EXCLUDES. A hit line matching that
+# exclude regex is a known false positive and is dropped. Keep excludes narrow:
+# they must not be able to hide a real credential.
 PATTERNS=(
     'sk-[a-zA-Z0-9]{20,}'
     'ghp_[a-zA-Z0-9]{36}'
@@ -14,6 +17,20 @@ PATTERNS=(
     '-----BEGIN (RSA|DSA|EC|OPENSSH|PGP) PRIVATE KEY-----'
     '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
 )
+EXCLUDES=(
+    ''
+    ''
+    ''
+    ''
+    ''
+    ''
+    ''
+    # systemd template unit instances are not email addresses: user@1000.service,
+    # getty@tty1.service, pcloud-sleep-failed@pcloud-resume.service.service. The
+    # suffixes below are the systemd unit types, none of which is a real TLD, so
+    # this cannot mask an address at a genuine domain.
+    '@[a-zA-Z0-9._:%-]+\.(service|socket|target|timer|mount|automount|swap|path|slice|scope|device)([^a-zA-Z0-9]|$)'
+)
 
 found=0
 staged_files=$(git diff --cached --name-only --diff-filter=ACM)
@@ -22,12 +39,29 @@ if [ -z "$staged_files" ]; then
     exit 0
 fi
 
-for pattern in "${PATTERNS[@]}"; do
-    matches=$(echo "$staged_files" | xargs grep -lnE "$pattern" 2>/dev/null || true)
+# Every grep below passes the pattern with -e: several patterns start with "-"
+# (the PRIVATE KEY header), which grep otherwise parses as options -- that bug
+# meant the private-key detector silently never matched anything.
+for i in "${!PATTERNS[@]}"; do
+    pattern="${PATTERNS[$i]}"
+    exclude="${EXCLUDES[$i]:-}"
+    matches=$(echo "$staged_files" | xargs grep -lnE -e "$pattern" 2>/dev/null || true)
     if [ -n "$matches" ]; then
         # Show the actual matches for review
         for f in $matches; do
-            hits=$(grep -nE "$pattern" "$f" 2>/dev/null || true)
+            hits=$(grep -nE -e "$pattern" "$f" 2>/dev/null || true)
+            if [ -n "$hits" ] && [ -n "$exclude" ]; then
+                # Delete only the false-positive substrings, then keep the line
+                # if the pattern STILL matches the remainder. Dropping the whole
+                # line instead would let a real secret hide behind a unit name
+                # sitting on the same line.
+                hits=$(echo "$hits" | while IFS= read -r line; do
+                    remainder=$(printf '%s' "$line" | sed -E "s/$exclude//g")
+                    if printf '%s' "$remainder" | grep -qE -e "$pattern"; then
+                        printf '%s\n' "$line"
+                    fi
+                done)
+            fi
             if [ -n "$hits" ]; then
                 echo ""
                 echo "  POTENTIAL SECRET in $f:"
