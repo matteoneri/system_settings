@@ -7,9 +7,10 @@ STATE_DIR="$HOME/.config/i3-session"
 SNAPSHOT="$STATE_DIR/snapshot.json"
 PIDFILE="$STATE_DIR/snapshot.pid"
 RESTORE_LOCK="$STATE_DIR/restore.lock"
+RESTORE_DONE="/tmp/i3-session-restore-done"
 INTERVAL=30
 LOCK_STALE=300
-SCRATCHPAD_CLASSES='["dropdown-terminal","dropdown-newsboat","slovodnia"]'
+FIRST_TICK_WAIT=180
 TITLE_VAR="I3SESSION_TITLE"
 TITLE_MAX=80
 
@@ -208,13 +209,15 @@ write_snapshot() {
 
     out=$(echo "$tree_json" | jq \
         --argjson kitty "$map_json" \
-        --argjson excl "$SCRATCHPAD_CLASSES" \
         --arg focused "$(i3-msg -t get_workspaces | jq -r '.[] | select(.focused) | .name')" '
         def to_snap:
             if .window != null then
                 ((.window_properties.class // "") as $cls |
-                 if ($excl | index($cls)) then null
-                 elif $cls != "kitty" then
+                 # Only a default-class kitty is ours to relaunch. Every scratchpad
+                 # here sets its own --class (dropdown-terminal, dropdown-newsboat,
+                 # slovodnia), so this covers them and any future one without a
+                 # list to keep in step; other apps keep their declarative placement.
+                 if $cls != "kitty" then
                      { type: "leaf", percent: (.percent // 0), restore: false }
                  else
                      ($kitty[(.window|tostring)] // {}) as $kw |
@@ -265,6 +268,16 @@ if [[ -n "$ONCE" ]]; then
     tick
     exit $?
 fi
+
+# Both scripts autostart together. Take no snapshot until the restore has
+# finished, skipped, or found nothing — otherwise the first tick replaces the
+# snapshot it was supposed to bring back. The marker is on tmpfs, so a boot
+# where the restore never runs at all only costs this bounded wait.
+waited=0
+while [[ ! -e "$RESTORE_DONE" ]] && (( waited < FIRST_TICK_WAIT )); do
+    sleep 2
+    waited=$((waited + 2))
+done
 
 while true; do
     tick

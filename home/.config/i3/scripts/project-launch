@@ -33,6 +33,8 @@ fi
 # Determine category (OWN/FNA) from project path
 category="${project%%/*}"
 
+KITTY_CONF="$HOME/.config/kitty/kitty.conf"
+
 # Pick browser, claude config, and kitty theme based on category
 if [[ "$category" == "FNA" ]]; then
     browser_cmd="firefox"
@@ -71,12 +73,15 @@ i3-msg 'focus parent; focus parent; focus parent; focus parent; split h'
 #          claude1           ||         claude2
 
 # 1. Open yazi (creates new column if workspace already has windows)
-kitty --config "$kitty_theme" --directory "$path" -e yazi &
+# The main config must be passed explicitly: kitty skips ~/.config/kitty/kitty.conf
+# entirely once --config is given, which would leave these windows with no
+# remote-control socket and make them invisible to session-snapshot.
+kitty --config "$KITTY_CONF" --config "$kitty_theme" --directory "$path" -e yazi &
 sleep 1
 
 # 2. Split vertically: claude will go below yazi
 i3-msg 'splitv'
-kitty --config "$kitty_theme" --directory "$path" -e env CLAUDE_CONFIG_DIR="$claude_config_dir" claude &
+kitty --config "$KITTY_CONF" --config "$kitty_theme" --directory "$path" -e env CLAUDE_CONFIG_DIR="$claude_config_dir" claude &
 sleep 1
 
 # 3. Focus back up to yazi, split horizontally for the browser tab

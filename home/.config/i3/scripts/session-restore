@@ -11,13 +11,14 @@ STATE_DIR="$HOME/.config/i3-session"
 SNAPSHOT="${I3_SESSION_SNAPSHOT:-$STATE_DIR/snapshot.json}"
 SKIP_MARKER="$STATE_DIR/skip"
 RESTORE_LOCK="$STATE_DIR/restore.lock"
+RESTORE_DONE="/tmp/i3-session-restore-done"
 LAYOUT_DIR="$STATE_DIR/layouts"
 SETTLE_TRIES=45
 PLACE_TRIES=40
 UUID_RE='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
 INSTANCE_PREFIX="i3s"
 
-# --- layout synthesis (U6) ---------------------------------------------------
+# --- layout synthesis: prune unrestored slots, renormalize, name each slot ---
 
 # Prints {layout:[...], terminals:[...]} for one workspace, or exits non-zero.
 # Slots for windows this feature does not restore are dropped and their siblings
@@ -57,6 +58,8 @@ plan_workspace() {
         | if $root == null then { layout: [], terminals: [] }
           else
             ($root | renorm) as $r
+            # paths/getpath rather than a direct walk: a leaf can sit at any
+            # nesting depth, and each needs a distinct swallow criterion.
             | [ $r | paths as $p
                 | (($r | getpath($p)) as $n
                    | select(($n | type) == "object" and $n.type == "leaf")
@@ -74,13 +77,28 @@ plan_workspace() {
 }
 
 if [[ "$1" == "--plan" ]]; then
-    [[ -f "$2" ]] || exit 1
-    jq -e . "$2" >/dev/null 2>&1 || exit 1
-    plan_workspace "$2" "$3" 1 || exit 1
+    if [[ ! -f "$2" ]]; then
+        echo "session-restore --plan: no snapshot file at '$2'" >&2
+        exit 1
+    fi
+    if ! jq -e . "$2" >/dev/null 2>&1; then
+        echo "session-restore --plan: '$2' is not valid JSON" >&2
+        exit 1
+    fi
+    if ! plan_workspace "$2" "$3" 1; then
+        echo "session-restore --plan: no workspace '$3' in that snapshot, or nothing in it to restore" >&2
+        exit 1
+    fi
     exit 0
 fi
 
 # --- guards ------------------------------------------------------------------
+
+# Handshake the watcher waits on before its first tick. It lives in /tmp, which
+# is tmpfs here, so every boot starts without it. Written on every exit path,
+# including the skip and no-snapshot paths — those take no lock, and without the
+# handshake the next tick would replace the snapshot the skip exists to keep.
+trap 'rm -f "$RESTORE_LOCK"; : > "$RESTORE_DONE"' EXIT
 
 # One boot can opt out; the marker self-clears so the next boot restores.
 if [[ -f "$SKIP_MARKER" ]]; then
@@ -103,7 +121,6 @@ fi
 # the empty boot desktop.
 mkdir -p "$LAYOUT_DIR" && chmod 700 "$LAYOUT_DIR"
 touch "$RESTORE_LOCK"
-trap 'rm -f "$RESTORE_LOCK"' EXIT
 
 # theme-switch restarts i3 in place about a second into boot, and ws10-layout
 # steals focus to lay out the chat apps. Appending layouts through either is
@@ -115,7 +132,19 @@ while pgrep -f "i3/scripts/theme-switch" >/dev/null 2>&1 || pgrep -f "i3/scripts
     (( tries >= SETTLE_TRIES )) && break
 done
 
-# --- validation (KTD14) ------------------------------------------------------
+# --- helpers and value validation --------------------------------------------
+
+# Container ids of placeholders on a workspace that no window has filled yet.
+# Empty output means every slot is filled. The workspace scoping is required, not
+# incidental: i3's own topdock/bottomdock areas also carry a swallows entry, so a
+# tree-wide version of this query would return them and the sweep would kill the
+# dock that polybar lives in.
+unfilled_slots() {
+    i3-msg -t get_tree 2>/dev/null | jq -r --arg ws "$1" '
+        .. | objects | select(.type == "workspace" and .name == $ws)
+        | [ recurse(.nodes[]?) ] | .[]
+        | select(((.swallows // []) | length) > 0) | .id' 2>/dev/null
+}
 
 valid_workspace_name() { [[ -n "$1" && "$1" != *'"'* && "$1" != *';'* ]]; }
 valid_session_id()     { [[ "$1" =~ $UUID_RE ]]; }
@@ -127,7 +156,11 @@ valid_config_dir()     { [[ "$1" == "$HOME/.claude-fna" || "$1" == "$HOME/.claud
 restored=0
 failed=0
 next_index=1
+used_sessions=" "
 focused=$(jq -r '.focused_workspace // empty' "$SNAPSHOT")
+# A watcher that died leaves the snapshot frozen; a days-old restore that
+# looks correct is the failure to make visible.
+snap_age_h=$(( ( $(date +%s) - $(stat -c %Y "$SNAPSHOT" 2>/dev/null || date +%s) ) / 3600 ))
 
 while IFS= read -r ws; do
     if ! valid_workspace_name "$ws"; then
@@ -146,7 +179,7 @@ while IFS= read -r ws; do
     ( umask 077; echo "$plan" | jq -c '.layout[]' > "$layout_file" )
 
     i3-msg "workspace \"$ws\"" >/dev/null 2>&1
-    if ! i3-msg "append_layout $layout_file" 2>&1 | grep -q '"success":true'; then
+    if ! i3-msg "append_layout $layout_file" 2>&1 | rg -q '"success":true'; then
         notify-send "Session restore" "Could not lay out workspace $ws"
         failed=$((failed + 1))
         continue
@@ -164,6 +197,20 @@ while IFS= read -r ws; do
             failed=$((failed + 1))
             continue
         fi
+
+        # The inexact fallback resolves per directory, so several panes in one
+        # repository can carry the same session id. Resuming it twice would put
+        # two processes in one transcript, so the first pane wins and the rest
+        # come back as shells.
+        if [[ -n "$sid" && "$used_sessions" == *" $sid "* ]]; then
+            kitty --name "$inst" --directory "$cwd" & disown
+            notify-send "Session restore" "$inst: session already resumed in another pane, opened a shell"
+            failed=$((failed + 1))
+            restored=$((restored + 1))
+            sleep 0.4
+            continue
+        fi
+        [[ -n "$sid" ]] && used_sessions+="$sid "
 
         # Values are passed as separate arguments, never interpolated into a
         # command string, and the agent is the binary — not the shell wrapper,
@@ -198,14 +245,14 @@ while IFS= read -r ws; do
 
     # Wait for the slots to fill, then drop any that never did. A placeholder is
     # a real window distinguished by its non-empty swallows array, so it is
-    # killed by container id rather than by a workspace-wide kill.
+    # killed by container id rather than by a workspace-wide kill, which would
+    # take the real windows with it. One query answers both questions: which
+    # slots are still empty, and what to kill once waiting is over.
     tries=0
+    unfilled=""
     while (( tries < PLACE_TRIES )); do
-        remaining=$(i3-msg -t get_tree 2>/dev/null | jq --arg ws "$ws" '
-            [ .. | objects | select(.type == "workspace" and .name == $ws)
-              | [ recurse(.nodes[]?) ] | .[]
-              | select(((.swallows // []) | length) > 0) ] | length' 2>/dev/null)
-        [[ "$remaining" == "0" ]] && break
+        unfilled=$(unfilled_slots "$ws")
+        [[ -z "$unfilled" ]] && break
         sleep 0.5
         tries=$((tries + 1))
     done
@@ -214,10 +261,7 @@ while IFS= read -r ws; do
         [[ -z "$con_id" ]] && continue
         i3-msg "[con_id=$con_id] kill" >/dev/null 2>&1
         failed=$((failed + 1))
-    done < <(i3-msg -t get_tree 2>/dev/null | jq -r --arg ws "$ws" '
-        .. | objects | select(.type == "workspace" and .name == $ws)
-        | [ recurse(.nodes[]?) ] | .[]
-        | select(((.swallows // []) | length) > 0) | .id' 2>/dev/null)
+    done <<< "$unfilled"
 
     next_index=$((next_index + slot_count))
 done < <(jq -r '.workspaces[].name' "$SNAPSHOT")
@@ -227,7 +271,7 @@ if [[ -n "$focused" ]] && valid_workspace_name "$focused"; then
 fi
 
 if (( failed > 0 )); then
-    notify-send "Session restore" "$restored terminal(s) restored, $failed problem(s)"
+    notify-send "Session restore" "$restored terminal(s) restored, $failed problem(s) (snapshot ${snap_age_h}h old)"
 else
-    notify-send "Session restore" "$restored terminal(s) restored"
+    notify-send "Session restore" "$restored terminal(s) restored (snapshot ${snap_age_h}h old)"
 fi

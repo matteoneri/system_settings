@@ -72,12 +72,19 @@ else
     fail "expected no layout for an all-unrestorable workspace, got: $plan"
 fi
 
-echo "== malformed snapshot is rejected, not partially planned =="
-if "$RESTORE" --plan "$FIXTURES/malformed.json" X >/dev/null 2>&1; then
-    fail "malformed snapshot should exit non-zero"
-else
-    pass "malformed snapshot rejected"
-fi
+echo "== bad input is rejected with a message, not a silent exit =="
+for bad in "$FIXTURES/malformed.json:X:malformed snapshot" "$FIXTURES/does-not-exist.json:X:missing snapshot file" "$FIXTURES/single.json:NO_SUCH_WS:unknown workspace name"; do
+    path=${bad%%:*}; rest=${bad#*:}; ws=${rest%%:*}; desc=${rest#*:}
+    err=$("$RESTORE" --plan "$path" "$ws" 2>&1 >/dev/null)
+    rc=$?
+    if (( rc == 0 )); then
+        fail "$desc should exit non-zero"
+    elif [[ -z "$err" ]]; then
+        fail "$desc exited non-zero but said nothing"
+    else
+        pass "$desc rejected with a message"
+    fi
+done
 
 echo "== fixtures carry no real paths or identifiers =="
 if rg -q "/home/" "$FIXTURES" 2>/dev/null; then
