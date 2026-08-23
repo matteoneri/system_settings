@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "focused_workspace": "B",
+  "workspaces": [
+    { "name": "B", "tree": [
+      { "type": "con", "layout": "tabbed", "percent": 1.0, "nodes": [
+        { "type": "leaf", "percent": 0.5, "restore": false },
+        { "type": "leaf", "percent": 0.5, "restore": true, "cwd": "/tmp/fixture-f", "agent": null, "session_id": null, "config_dir": null, "inexact": false }
+      ] }
+    ] }
+  ]
+}

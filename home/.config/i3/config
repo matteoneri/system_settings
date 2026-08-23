@@ -307,6 +307,11 @@ exec --no-startup-id greenclip daemon
 exec --no-startup-id xset s 480 dpms 600 600 600
 exec --no-startup-id xautolock -time 10 -locker "~/.config/i3/scripts/auto-lock"
 exec --no-startup-id ~/.config/i3/scripts/resume-refresh
+# Session restore: the watcher snapshots layout/cwds/agent sessions on an
+# interval; the restore rebuilds them once per fresh start. Plain exec on both,
+# so neither re-runs on reload or restart-in-place.
+exec --no-startup-id ~/.config/i3/scripts/session-snapshot
+exec --no-startup-id ~/.config/i3/scripts/session-restore
 
 ##################
 # floating rules #

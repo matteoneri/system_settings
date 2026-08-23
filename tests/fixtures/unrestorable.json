@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "focused_workspace": "D",
+  "workspaces": [
+    { "name": "D", "tree": [
+      { "type": "con", "layout": "tabbed", "percent": 1.0, "nodes": [
+        { "type": "leaf", "percent": 0.5, "restore": false },
+        { "type": "leaf", "percent": 0.5, "restore": false }
+      ] }
+    ] }
+  ]
+}

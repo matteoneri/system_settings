@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "focused_workspace": "A",
+  "workspaces": [
+    { "name": "A", "tree": [
+      { "type": "con", "layout": "splitv", "percent": 0.25, "nodes": [
+        { "type": "leaf", "percent": 0.5, "restore": true, "cwd": "/tmp/fixture-a", "agent": "claude", "session_id": "00000000-0000-0000-0000-000000000001", "config_dir": "/tmp/fixture-acct", "inexact": false },
+        { "type": "leaf", "percent": 0.5, "restore": true, "cwd": "/tmp/fixture-b", "agent": null, "session_id": null, "config_dir": null, "inexact": false }
+      ] },
+      { "type": "con", "layout": "stacked", "percent": 0.75, "nodes": [
+        { "type": "leaf", "percent": 0.34, "restore": true, "cwd": "/tmp/fixture-c", "agent": "codex", "session_id": "00000000-0000-0000-0000-000000000002", "config_dir": null, "inexact": false },
+        { "type": "leaf", "percent": 0.33, "restore": true, "cwd": "/tmp/fixture-d", "agent": null, "session_id": null, "config_dir": null, "inexact": false },
+        { "type": "leaf", "percent": 0.33, "restore": true, "cwd": "/tmp/fixture-e", "agent": null, "session_id": null, "config_dir": null, "inexact": false }
+      ] }
+    ] }
+  ]
+}

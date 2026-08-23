@@ -1,0 +1,233 @@
+#!/bin/bash
+# Rebuild the i3 session recorded by session-snapshot: layout, terminal cwds,
+# and resumed agent sessions. Runs once per fresh i3 start (exec --no-startup-id).
+#
+# Also usable as `session-restore --plan <snapshot> <workspace>` to print the
+# generated layout and terminal manifest without touching the desktop.
+
+STATE_DIR="$HOME/.config/i3-session"
+# Overridable so a restore can be rehearsed against a scratch snapshot without
+# disturbing the live one.
+SNAPSHOT="${I3_SESSION_SNAPSHOT:-$STATE_DIR/snapshot.json}"
+SKIP_MARKER="$STATE_DIR/skip"
+RESTORE_LOCK="$STATE_DIR/restore.lock"
+LAYOUT_DIR="$STATE_DIR/layouts"
+SETTLE_TRIES=45
+PLACE_TRIES=40
+UUID_RE='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+INSTANCE_PREFIX="i3s"
+
+# --- layout synthesis (U6) ---------------------------------------------------
+
+# Prints {layout:[...], terminals:[...]} for one workspace, or exits non-zero.
+# Slots for windows this feature does not restore are dropped and their siblings
+# renormalized, so no unfillable placeholder is ever created.
+plan_workspace() {
+    local snapshot="$1" ws="$2" base="${3:-1}"
+    jq -e --arg ws "$ws" --argjson base "$base" --arg prefix "$INSTANCE_PREFIX" '
+        def prune:
+            if .type == "leaf" then
+                (if .restore == true then . else empty end)
+            else
+                ([ .nodes[]? | prune ]) as $kids
+                | if ($kids | length) == 0 then empty
+                  else { type: "con", layout: .layout, percent: (.percent // 0), nodes: $kids }
+                  end
+            end;
+        def renorm:
+            if .type == "con" then
+                ([ .nodes[] | (.percent // 0) ] | add) as $sum
+                | (.nodes | length) as $n
+                | .nodes = [ .nodes[]
+                    | (.percent = (if $sum > 0 then ((.percent // 0) / $sum) else (1 / $n) end))
+                    | renorm ]
+            else . end;
+        def to_i3:
+            if .type == "leaf" then
+                { type: "con", percent: .percent,
+                  swallows: [ { instance: ("^" + .instance + "$") } ] }
+            else
+                { type: "con", layout: .layout, percent: .percent,
+                  nodes: [ .nodes[] | to_i3 ] }
+            end;
+
+        (.workspaces[] | select(.name == $ws)) as $w
+        | ({ type: "con", layout: "splith", percent: 1, nodes: ($w.tree // []) }
+           | [ prune ] | .[0] // null) as $root
+        | if $root == null then { layout: [], terminals: [] }
+          else
+            ($root | renorm) as $r
+            | [ $r | paths as $p
+                | (($r | getpath($p)) as $n
+                   | select(($n | type) == "object" and $n.type == "leaf")
+                   | $p) ] as $lp
+            | reduce range(0; ($lp | length)) as $i ({ tree: $r, terms: [] };
+                ($lp[$i]) as $p
+                | ($prefix + "-" + (($base + $i) | tostring)) as $inst
+                | .tree = (.tree | setpath($p + ["instance"]; $inst))
+                | .terms = (.terms + [ ($r | getpath($p)) + { instance: $inst } ]))
+            | { layout: [ .tree.nodes[] | to_i3 ],
+                terminals: [ .terms[]
+                  | { instance, cwd, agent, session_id, config_dir,
+                      inexact: (.inexact // false) } ] }
+          end' "$snapshot" 2>/dev/null
+}
+
+if [[ "$1" == "--plan" ]]; then
+    [[ -f "$2" ]] || exit 1
+    jq -e . "$2" >/dev/null 2>&1 || exit 1
+    plan_workspace "$2" "$3" 1 || exit 1
+    exit 0
+fi
+
+# --- guards ------------------------------------------------------------------
+
+# One boot can opt out; the marker self-clears so the next boot restores.
+if [[ -f "$SKIP_MARKER" ]]; then
+    rm -f "$SKIP_MARKER"
+    notify-send "Session restore" "Skipped for this boot"
+    exit 0
+fi
+
+# The first boot after this lands has no snapshot. Nothing to say about it.
+[[ -f "$SNAPSHOT" ]] || exit 0
+
+if ! jq -e . "$SNAPSHOT" >/dev/null 2>&1; then
+    notify-send "Session restore" "Snapshot is unreadable; not restoring"
+    exit 1
+fi
+
+# Claim the lock before waiting, not after: the watcher starts from its own exec
+# line at the same time, and during a settle wait of up to SETTLE_TRIES seconds
+# an unlocked tick would replace the snapshot being restored with a capture of
+# the empty boot desktop.
+mkdir -p "$LAYOUT_DIR" && chmod 700 "$LAYOUT_DIR"
+touch "$RESTORE_LOCK"
+trap 'rm -f "$RESTORE_LOCK"' EXIT
+
+# theme-switch restarts i3 in place about a second into boot, and ws10-layout
+# steals focus to lay out the chat apps. Appending layouts through either is
+# what loses placeholders, so wait them out. Break and proceed on timeout.
+tries=0
+while pgrep -f "i3/scripts/theme-switch" >/dev/null 2>&1 || pgrep -f "i3/scripts/ws10-layout" >/dev/null 2>&1; do
+    sleep 1
+    tries=$((tries + 1))
+    (( tries >= SETTLE_TRIES )) && break
+done
+
+# --- validation (KTD14) ------------------------------------------------------
+
+valid_workspace_name() { [[ -n "$1" && "$1" != *'"'* && "$1" != *';'* ]]; }
+valid_session_id()     { [[ "$1" =~ $UUID_RE ]]; }
+valid_cwd()            { [[ -n "$1" && "$1" == /* && -d "$1" ]]; }
+valid_config_dir()     { [[ "$1" == "$HOME/.claude-fna" || "$1" == "$HOME/.claude-own" || "$1" == "$HOME/.claude" ]]; }
+
+# --- restore -----------------------------------------------------------------
+
+restored=0
+failed=0
+next_index=1
+focused=$(jq -r '.focused_workspace // empty' "$SNAPSHOT")
+
+while IFS= read -r ws; do
+    if ! valid_workspace_name "$ws"; then
+        notify-send "Session restore" "Skipped a workspace with an unusable name"
+        failed=$((failed + 1))
+        continue
+    fi
+
+    plan=$(plan_workspace "$SNAPSHOT" "$ws" "$next_index")
+    [[ -z "$plan" ]] && continue
+    slot_count=$(echo "$plan" | jq '.terminals | length')
+    (( slot_count == 0 )) && continue
+
+    layout_file="$LAYOUT_DIR/ws-$next_index.json"
+    # append_layout takes a stream of top-level containers, not a JSON array.
+    ( umask 077; echo "$plan" | jq -c '.layout[]' > "$layout_file" )
+
+    i3-msg "workspace \"$ws\"" >/dev/null 2>&1
+    if ! i3-msg "append_layout $layout_file" 2>&1 | grep -q '"success":true'; then
+        notify-send "Session restore" "Could not lay out workspace $ws"
+        failed=$((failed + 1))
+        continue
+    fi
+
+    while IFS= read -r term; do
+        inst=$(jq -r '.instance' <<< "$term")
+        cwd=$(jq -r '.cwd // ""' <<< "$term")
+        agent=$(jq -r '.agent // ""' <<< "$term")
+        sid=$(jq -r '.session_id // ""' <<< "$term")
+        cdir=$(jq -r '.config_dir // ""' <<< "$term")
+
+        if ! valid_cwd "$cwd"; then
+            notify-send "Session restore" "Skipped $inst: directory is gone"
+            failed=$((failed + 1))
+            continue
+        fi
+
+        # Values are passed as separate arguments, never interpolated into a
+        # command string, and the agent is the binary — not the shell wrapper,
+        # which would add a permission bypass and an interactive account prompt.
+        case "$agent" in
+            claude)
+                if valid_session_id "$sid" && valid_config_dir "$cdir"; then
+                    kitty --name "$inst" --directory "$cwd" -e \
+                        env "CLAUDE_CONFIG_DIR=$cdir" claude --resume "$sid" & disown
+                else
+                    kitty --name "$inst" --directory "$cwd" & disown
+                    notify-send "Session restore" "$inst: session unusable, opened a shell"
+                    failed=$((failed + 1))
+                fi
+                ;;
+            codex)
+                if valid_session_id "$sid"; then
+                    kitty --name "$inst" --directory "$cwd" -e codex resume "$sid" & disown
+                else
+                    kitty --name "$inst" --directory "$cwd" & disown
+                    notify-send "Session restore" "$inst: session unusable, opened a shell"
+                    failed=$((failed + 1))
+                fi
+                ;;
+            *)
+                kitty --name "$inst" --directory "$cwd" & disown
+                ;;
+        esac
+        restored=$((restored + 1))
+        sleep 0.4
+    done < <(echo "$plan" | jq -c '.terminals[]')
+
+    # Wait for the slots to fill, then drop any that never did. A placeholder is
+    # a real window distinguished by its non-empty swallows array, so it is
+    # killed by container id rather than by a workspace-wide kill.
+    tries=0
+    while (( tries < PLACE_TRIES )); do
+        remaining=$(i3-msg -t get_tree 2>/dev/null | jq --arg ws "$ws" '
+            [ .. | objects | select(.type == "workspace" and .name == $ws)
+              | [ recurse(.nodes[]?) ] | .[]
+              | select(((.swallows // []) | length) > 0) ] | length' 2>/dev/null)
+        [[ "$remaining" == "0" ]] && break
+        sleep 0.5
+        tries=$((tries + 1))
+    done
+
+    while IFS= read -r con_id; do
+        [[ -z "$con_id" ]] && continue
+        i3-msg "[con_id=$con_id] kill" >/dev/null 2>&1
+        failed=$((failed + 1))
+    done < <(i3-msg -t get_tree 2>/dev/null | jq -r --arg ws "$ws" '
+        .. | objects | select(.type == "workspace" and .name == $ws)
+        | [ recurse(.nodes[]?) ] | .[]
+        | select(((.swallows // []) | length) > 0) | .id' 2>/dev/null)
+
+    next_index=$((next_index + slot_count))
+done < <(jq -r '.workspaces[].name' "$SNAPSHOT")
+
+if [[ -n "$focused" ]] && valid_workspace_name "$focused"; then
+    i3-msg "workspace \"$focused\"" >/dev/null 2>&1
+fi
+
+if (( failed > 0 )); then
+    notify-send "Session restore" "$restored terminal(s) restored, $failed problem(s)"
+else
+    notify-send "Session restore" "$restored terminal(s) restored"
+fi
