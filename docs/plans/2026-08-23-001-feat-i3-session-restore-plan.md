@@ -66,7 +66,7 @@ A second, smaller irritation shares the same data. A session renamed with `/rena
 - R10. Restore runs once per fresh i3 start, and only after the boot-time `theme-switch` restart-in-place has completed; neither an i3 reload nor a restart-in-place triggers it again.
 - R11. Restore reproduces the captured tree for each workspace and places every terminal in the slot it occupied.
 - R12. Each restored terminal opens at its captured working directory.
-- R13. Each restored agent terminal resumes its captured session live, under the account that session belongs to, with the agent's own permission prompts intact.
+- R13. Each restored agent terminal resumes its captured session live, under the account that session belongs to, launched without any added permission bypass.
 - R14. A terminal that held no agent returns as a plain shell at its captured directory.
 - R15. A single boot can skip the restore without editing any configuration file.
 - R16. Existing declarative placement for Spotify and the chat apps continues to work untouched.
@@ -345,7 +345,7 @@ The watcher's single-instance guard exists for manual double-starts, not for res
   - The restore begins only after the boot-time i3 restart, not before it.
   - A two-workspace snapshot restores both, each terminal in its captured slot.
   - Each restored terminal's shell starts in its captured directory.
-  - An agent terminal comes back with its own session resumed, in the right account, with its permission prompts intact.
+  - An agent terminal comes back with its own session resumed, in the right account, launched without an added permission-bypass flag.
   - A terminal captured without an agent comes back as a plain shell.
   - A snapshot value failing validation is skipped and reported rather than executed.
   - A captured directory that no longer exists reports a failure, leaves no placeholder, and does not stop the remaining terminals.

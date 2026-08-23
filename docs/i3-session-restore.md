@@ -69,6 +69,20 @@ I3_SESSION_SNAPSHOT=/path/to/other.json ~/.config/i3/scripts/session-restore
 bash tests/session-layout-roundtrip.sh
 ```
 
+## Permission posture of resumed sessions
+
+The restore launches the agent binary directly with an explicit account, never
+through the zsh `claude` wrapper — the wrapper adds `--dangerously-skip-permissions`
+on every branch and would also stall on its interactive account prompt. So nothing
+here adds a permission bypass.
+
+What is *not* established: a session transcript records `permission-mode` events,
+so a session that was running with permissions bypassed may come back that way on
+`--resume` regardless of how it is launched. That was not verified, and it is the
+CLI's behavior rather than something these scripts control. Since restored sessions
+come up unattended at login, treat a session you deliberately put in a bypassed
+mode as still bypassed after a restore until proven otherwise.
+
 ## What it does not do
 
 Browsers, chat and music apps keep their existing declarative placement in the
