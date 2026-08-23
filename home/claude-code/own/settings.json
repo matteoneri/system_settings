@@ -20,7 +20,7 @@
       "Bash(git reset --hard*)"
     ]
   },
-  "model": "opus[1m]",
+  "model": "claude-fable-5[1m]",
   "enableAllProjectMcpServers": false,
   "hooks": {
     "UserPromptSubmit": [
@@ -87,5 +87,6 @@
   "skipDangerousModePermissionPrompt": true,
   "skipWorkflowUsageWarning": true,
   "theme": "dark-daltonized",
-  "teammateMode": "auto"
+  "teammateMode": "auto",
+  "tui": "fullscreen"
 }
