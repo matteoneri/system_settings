@@ -19,6 +19,18 @@ SESSION=$(printf '%s' "$INPUT" | jq -r '.session_id // empty')
 [ -z "$PROMPT" ] && exit 0
 [ -z "$SESSION" ] && exit 0
 
+# A session the user named with /rename owns its own title — session-snapshot
+# applies that name and locks it. Bail out before spending an API call on a
+# title we would not be allowed to set anyway. The session record omits
+# nameSource entirely when the name came from the user.
+CFG="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+for rec in "$CFG"/sessions/*.json; do
+    [ -f "$rec" ] || continue
+    [ "$(jq -r '.sessionId // empty' "$rec" 2>/dev/null)" = "$SESSION" ] || continue
+    jq -e 'has("nameSource") | not' "$rec" >/dev/null 2>&1 && exit 0
+    break
+done
+
 STATE="/tmp/claude-title-$SESSION"
 PREV=""
 [ -f "$STATE" ] && PREV=$(cat "$STATE")

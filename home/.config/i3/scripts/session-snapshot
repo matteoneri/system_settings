@@ -1,0 +1,272 @@
+#!/bin/bash
+# Snapshot the i3 session (layout, focus, terminal cwds, agent sessions) on an interval.
+# Also keeps a user-named Claude Code session's name in its kitty title.
+# Started once from i3 config (exec --no-startup-id).
+
+STATE_DIR="$HOME/.config/i3-session"
+SNAPSHOT="$STATE_DIR/snapshot.json"
+PIDFILE="$STATE_DIR/snapshot.pid"
+RESTORE_LOCK="$STATE_DIR/restore.lock"
+INTERVAL=30
+LOCK_STALE=300
+SCRATCHPAD_CLASSES='["dropdown-terminal","dropdown-newsboat","slovodnia"]'
+TITLE_VAR="I3SESSION_TITLE"
+TITLE_MAX=80
+
+ONCE=""
+[[ "$1" == "--once" ]] && ONCE=1
+
+mkdir -p "$STATE_DIR" && chmod 700 "$STATE_DIR"
+
+# Single instance: a live pid in the pidfile wins. --once is a manual check and
+# does not claim the pidfile, so it can run alongside the watcher.
+if [[ -z "$ONCE" ]]; then
+    if [[ -f "$PIDFILE" ]] && kill -0 "$(cat "$PIDFILE" 2>/dev/null)" 2>/dev/null; then
+        exit 0
+    fi
+    echo $$ > "$PIDFILE"
+    trap 'rm -f "$PIDFILE"' EXIT
+fi
+
+# --- kitty enumeration -------------------------------------------------------
+
+# One JSON object per kitty window, keyed later by X11 window id. kitty nests
+# platform_window_id on the os-window, not the window, so pair them explicitly.
+kitty_windows() {
+    local pid sock
+    for pid in $(pgrep -x kitty); do
+        sock="unix:@kitty-$pid"
+        kitty @ --to "$sock" ls 2>/dev/null | jq -c --arg sock "$sock" '
+            .[] as $ow |
+            $ow.tabs[]? | .windows[]? |
+            {
+                win_id: $ow.platform_window_id,
+                sock: $sock,
+                kitty_win: .id,
+                cwd: .cwd,
+                user_vars: (.user_vars // {}),
+                fg: [ .foreground_processes[]? | { pid: .pid, cmd: (.cmdline[0] // "") } ]
+            }' 2>/dev/null
+    done
+}
+
+# --- agent identity ----------------------------------------------------------
+
+# Kernel start time of a pid, used to reject a session record whose pid was reused.
+proc_start() {
+    awk '{print $22}' "/proc/$1/stat" 2>/dev/null
+}
+
+env_value() {
+    tr '\0' '\n' < "/proc/$1/environ" 2>/dev/null | sed -n "s/^$2=//p" | head -1
+}
+
+# Newest recorded session for a cwd under one account. Fallback only; inexact.
+newest_session_for() {
+    local config_dir="$1" cwd="$2" slug
+    slug="${cwd//\//-}"
+    fd -e jsonl . "$config_dir/projects/$slug" 2>/dev/null \
+        | xargs -r ls -t 2>/dev/null | head -1 | xargs -r basename | sed 's/\.jsonl$//'
+}
+
+# These emit a JSON object rather than delimited fields: tab is IFS whitespace,
+# so bash read collapses consecutive tabs and empty fields would shift.
+agent_json() {
+    jq -cn --arg agent "$1" --arg sid "$2" --arg cdir "$3" --argjson inexact "$4" \
+        '{ agent: (if $agent == "" then null else $agent end),
+           session_id: (if $sid == "" then null else $sid end),
+           config_dir: (if $cdir == "" then null else $cdir end),
+           inexact: $inexact }'
+}
+
+resolve_claude() {
+    local pid="$1" cwd="$2" config_dir record sid rec_start live_start
+    config_dir=$(env_value "$pid" CLAUDE_CONFIG_DIR)
+    [[ -z "$config_dir" ]] && config_dir="$HOME/.claude"
+    record="$config_dir/sessions/$pid.json"
+    if [[ -r "$record" ]]; then
+        rec_start=$(jq -r '.procStart // empty' "$record")
+        live_start=$(proc_start "$pid")
+        sid=$(jq -r '.sessionId // empty' "$record")
+        # procStart must match the live process, or the record is a reused pid.
+        if [[ -n "$sid" && -n "$rec_start" && "$rec_start" == "$live_start" ]]; then
+            agent_json claude "$sid" "$config_dir" false
+            return
+        fi
+    fi
+    sid=$(newest_session_for "$config_dir" "$cwd")
+    agent_json claude "$sid" "$config_dir" true
+}
+
+# The top-level codex session is the open rollout whose own header says source=cli;
+# the others the process holds open are subagent threads.
+resolve_codex() {
+    local pid="$1" link f sid
+    for link in /proc/"$pid"/fd/*; do
+        f=$(readlink "$link" 2>/dev/null)
+        case "$f" in
+            "$HOME"/.codex/sessions/*rollout-*.jsonl) ;;
+            *) continue ;;
+        esac
+        sid=$(head -1 "$f" 2>/dev/null | jq -r 'select(.payload.source == "cli") | .payload.id // empty' 2>/dev/null)
+        if [[ -n "$sid" ]]; then
+            agent_json codex "$sid" "" false
+            return
+        fi
+    done
+    agent_json codex "" "" true
+}
+
+# Resolve whichever agent is in a window's foreground process list.
+resolve_agent() {
+    local cwd="$1" pid cmd base
+    shift
+    while [[ $# -gt 1 ]]; do
+        pid="$1"; cmd="$2"; shift 2
+        base="${cmd##*/}"
+        case "$base" in
+            claude) resolve_claude "$pid" "$cwd"; return ;;
+            codex)  resolve_codex "$pid"; return ;;
+        esac
+    done
+    agent_json "" "" "" false
+}
+
+# --- title override ----------------------------------------------------------
+
+sanitize_title() {
+    tr -d '\000-\037\177' | cut -c1-"$TITLE_MAX"
+}
+
+# A record that carries nameSource was named by the CLI, not the user.
+claude_user_name() {
+    local config_dir="$1" pid="$2" record="$1/sessions/$2.json"
+    [[ -r "$record" ]] || return 1
+    jq -e 'has("nameSource") | not' "$record" >/dev/null 2>&1 || return 1
+    jq -r '.name // empty' "$record"
+}
+
+apply_titles() {
+    local windows="$1" w sock kitty_win owned name pid cmd base config_dir applied
+    # One JSON object per line, fields read individually — a delimited format
+    # would collapse empty fields (tab is IFS whitespace) and shift them.
+    while IFS= read -r w; do
+        [[ -z "$w" ]] && continue
+        sock=$(jq -r '.sock' <<< "$w")
+        kitty_win=$(jq -r '.kitty_win' <<< "$w")
+        owned=$(jq -r '.owned // ""' <<< "$w")
+        pid=$(jq -r '.pid // ""' <<< "$w")
+        cmd=$(jq -r '.cmd // ""' <<< "$w")
+        [[ -z "$sock" ]] && continue
+        applied=""
+        base="${cmd##*/}"
+        if [[ "$base" == "claude" && -n "$pid" ]]; then
+            config_dir=$(env_value "$pid" CLAUDE_CONFIG_DIR)
+            [[ -z "$config_dir" ]] && config_dir="$HOME/.claude"
+            name=$(claude_user_name "$config_dir" "$pid" | sanitize_title)
+            if [[ -n "$name" ]]; then
+                if [[ "$owned" != "$name" ]]; then
+                    kitty @ --to "$sock" set-window-title --match "id:$kitty_win" "$name" 2>/dev/null
+                    kitty @ --to "$sock" set-user-vars --match "id:$kitty_win" "$TITLE_VAR=$name" 2>/dev/null
+                fi
+                applied=1
+            fi
+        fi
+        # We set this title once and the session is gone or no longer user-named:
+        # hand the title back to the program running in the window.
+        if [[ -z "$applied" && -n "$owned" ]]; then
+            kitty @ --to "$sock" set-window-title --match "id:$kitty_win" --temporary 2>/dev/null
+            kitty @ --to "$sock" set-user-vars --match "id:$kitty_win" "$TITLE_VAR" 2>/dev/null
+        fi
+    done <<< "$windows"
+}
+
+# --- snapshot ---------------------------------------------------------------
+
+write_snapshot() {
+    local kitty_json tree_json map_json out
+    kitty_json=$(kitty_windows | jq -s '.')
+    if [[ -z "$kitty_json" || "$kitty_json" == "[]" ]]; then
+        notify-send "Session snapshot" "No kitty window responded; check allow_remote_control"
+        return 1
+    fi
+
+    # Resolve agent identity per kitty window, then key the result by X11 window id.
+    map_json=$(
+        echo "$kitty_json" | jq -c '.[]' | while read -r w; do
+            win_cwd=$(echo "$w" | jq -r '.cwd')
+            mapfile -t pairs < <(echo "$w" | jq -r '.fg[]? | .pid, .cmd')
+            agent_info=$(resolve_agent "$win_cwd" "${pairs[@]}")
+            echo "$w" | jq -c --argjson agent "$agent_info" \
+                '{ key: (.win_id|tostring),
+                   value: ({ cwd: .cwd, sock: .sock, kitty_win: .kitty_win } + $agent) }'
+        done | jq -s 'from_entries'
+    )
+
+    tree_json=$(i3-msg -t get_tree 2>/dev/null)
+    [[ -z "$tree_json" ]] && return 1
+
+    out=$(echo "$tree_json" | jq \
+        --argjson kitty "$map_json" \
+        --argjson excl "$SCRATCHPAD_CLASSES" \
+        --arg focused "$(i3-msg -t get_workspaces | jq -r '.[] | select(.focused) | .name')" '
+        def to_snap:
+            if .window != null then
+                ((.window_properties.class // "") as $cls |
+                 if ($excl | index($cls)) then null
+                 elif $cls != "kitty" then
+                     { type: "leaf", percent: (.percent // 0), restore: false }
+                 else
+                     ($kitty[(.window|tostring)] // {}) as $kw |
+                     { type: "leaf", percent: (.percent // 0), restore: true,
+                       cwd: ($kw.cwd // null), agent: ($kw.agent // null),
+                       session_id: ($kw.session_id // null),
+                       config_dir: ($kw.config_dir // null),
+                       inexact: ($kw.inexact // false) }
+                 end)
+            else
+                ({ type: "con", layout: .layout, percent: (.percent // 0),
+                   nodes: [ .nodes[]? | to_snap ] | map(select(. != null)) }
+                 | if (.nodes | length) == 0 then null else . end)
+            end;
+        {
+            version: 1,
+            focused_workspace: $focused,
+            workspaces: [
+                .. | objects
+                | select(.type == "workspace" and (.name | startswith("__i3") | not))
+                | { name: .name, tree: [ .nodes[]? | to_snap ] | map(select(. != null)) }
+                | select((.tree | length) > 0)
+            ]
+        }')
+
+    [[ -z "$out" ]] && return 1
+    ( umask 077; printf '%s\n' "$out" > "$SNAPSHOT.tmp" ) && mv -f "$SNAPSHOT.tmp" "$SNAPSHOT"
+}
+
+restore_in_progress() {
+    [[ -f "$RESTORE_LOCK" ]] || return 1
+    local age
+    age=$(( $(date +%s) - $(stat -c %Y "$RESTORE_LOCK" 2>/dev/null || echo 0) ))
+    (( age < LOCK_STALE ))
+}
+
+tick() {
+    restore_in_progress && return 0
+    local kitty_meta
+    kitty_meta=$(kitty_windows | jq -c --arg v "$TITLE_VAR" \
+        '{ sock: .sock, kitty_win: .kitty_win, owned: (.user_vars[$v] // ""),
+           pid: (.fg[0].pid // ""), cmd: (.fg[0].cmd // "") }' 2>/dev/null)
+    [[ -n "$kitty_meta" ]] && apply_titles "$kitty_meta"
+    write_snapshot
+}
+
+if [[ -n "$ONCE" ]]; then
+    tick
+    exit $?
+fi
+
+while true; do
+    tick
+    sleep "$INTERVAL"
+done
