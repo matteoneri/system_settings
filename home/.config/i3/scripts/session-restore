@@ -120,6 +120,9 @@ fi
 # an unlocked tick would replace the snapshot being restored with a capture of
 # the empty boot desktop.
 mkdir -p "$LAYOUT_DIR" && chmod 700 "$LAYOUT_DIR"
+# Generated layout filenames carry a per-run slot index, so they differ between
+# boots and would otherwise pile up instead of being overwritten.
+find "$LAYOUT_DIR" -maxdepth 1 -name '*.json' -delete 2>/dev/null
 touch "$RESTORE_LOCK"
 
 # theme-switch restarts i3 in place about a second into boot, and ws10-layout
@@ -178,7 +181,14 @@ while IFS= read -r ws; do
     # append_layout takes a stream of top-level containers, not a JSON array.
     ( umask 077; echo "$plan" | jq -c '.layout[]' > "$layout_file" )
 
-    i3-msg "workspace \"$ws\"" >/dev/null 2>&1
+    # Confirm the switch landed before appending: append_layout targets whatever
+    # is focused, so a failed switch would build this workspace's layout on top
+    # of a different one.
+    if ! i3-msg "workspace \"$ws\"" 2>&1 | rg -q '"success":true'; then
+        notify-send "Session restore" "Could not switch to workspace $ws; skipped it"
+        failed=$((failed + 1))
+        continue
+    fi
     if ! i3-msg "append_layout $layout_file" 2>&1 | rg -q '"success":true'; then
         notify-send "Session restore" "Could not lay out workspace $ws"
         failed=$((failed + 1))
