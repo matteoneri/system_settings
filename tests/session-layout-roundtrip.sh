@@ -99,6 +99,45 @@ for bad in "$FIXTURES/malformed.json:X:malformed snapshot" "$FIXTURES/does-not-e
     fi
 done
 
+echo "== input validators reject what they are meant to =="
+# Sourcing exposes the helpers without running a restore.
+# shellcheck disable=SC1090
+if source "$RESTORE" >/dev/null 2>&1; then
+    assert_true()  { if "$@" >/dev/null 2>&1; then pass "accepts: ${*:2}"; else fail "should accept: ${*:2}"; fi; }
+    assert_false() { if "$@" >/dev/null 2>&1; then fail "should reject: ${*:2}"; else pass "rejects: ${*:2}"; fi; }
+    assert_true  valid_workspace_name "2"
+    assert_true  valid_workspace_name "10:󰍡"
+    assert_false valid_workspace_name 'a"b'
+    assert_false valid_workspace_name 'a;exec evil'
+    assert_false valid_workspace_name ""
+    assert_true  valid_session_id "6cd56b4f-6031-410a-b6ba-4f868099fab7"
+    assert_false valid_session_id "not-a-uuid"
+    assert_false valid_session_id ""
+    assert_true  valid_cwd "/tmp"
+    assert_false valid_cwd "tmp"
+    assert_false valid_cwd "/nonexistent-$$"
+    assert_true  valid_config_dir "$HOME/.claude-fna"
+    assert_false valid_config_dir "/etc"
+else
+    fail "could not source $RESTORE to reach the validators"
+fi
+
+echo "== the tracked copy matches the installed one =="
+# The plan's sync-fidelity gate, mechanised: sync.sh copies live -> repo, so a
+# live edit that was never synced would leave the tracked copy behind.
+if [[ -n "${RESTORE_SCRIPT:-}" ]]; then
+    pass "skipped — RESTORE_SCRIPT was set explicitly"
+else
+    drift=0
+    for rel in .config/i3/scripts/session-restore .config/i3/scripts/session-snapshot; do
+        if [[ -e "$HOME/$rel" ]] && ! diff -q "$HOME/$rel" "$REPO_ROOT/home/$rel" >/dev/null 2>&1; then
+            fail "tracked copy of $rel differs from the installed one — run sync.sh"
+            drift=1
+        fi
+    done
+    (( drift == 0 )) && pass "tracked and installed copies match"
+fi
+
 echo "== fixtures carry no real paths or identifiers =="
 if rg -q "/home/" "$FIXTURES" 2>/dev/null; then
     fail "a fixture contains a real home path"

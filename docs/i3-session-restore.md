@@ -62,7 +62,10 @@ the two — it carries a name-source field only when the name was generated.
 # without touching the desktop.
 ~/.config/i3/scripts/session-restore --plan ~/.config/i3-session/snapshot.json 2
 
-# Rehearse a restore from a scratch snapshot instead of the live one.
+# Run a real restore from a different snapshot file. This is NOT a dry run: it
+# switches workspaces, spawns real kitty windows, resumes real agent sessions,
+# and uses the live lock, marker and layout directory. Only the input file is
+# substituted. Use --plan above if you want to look without touching anything.
 I3_SESSION_SNAPSHOT=/path/to/other.json ~/.config/i3/scripts/session-restore
 
 # Layout synthesis test, against hand-authored fixtures.

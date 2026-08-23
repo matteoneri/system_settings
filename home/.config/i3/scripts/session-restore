@@ -163,6 +163,10 @@ valid_session_id()     { [[ "$1" =~ $UUID_RE ]]; }
 valid_cwd()            { [[ -n "$1" && "$1" == /* && -d "$1" ]]; }
 valid_config_dir()     { [[ "$1" == "$HOME/.claude-fna" || "$1" == "$HOME/.claude-own" || "$1" == "$HOME/.claude" ]]; }
 
+# Sourcing this file exposes the helpers above for testing without running a
+# restore. Executing it normally proceeds.
+(return 0 2>/dev/null) && return 0
+
 # --- restore -----------------------------------------------------------------
 
 restored=0
