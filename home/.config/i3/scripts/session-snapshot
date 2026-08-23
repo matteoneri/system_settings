@@ -55,6 +55,7 @@ kitty_windows() {
                 win_id: $ow.platform_window_id,
                 sock: $sock,
                 kitty_win: $w.id,
+                shell: $w.pid,
                 cwd: $w.cwd,
                 user_vars: ($w.user_vars // {}),
                 fg: [ $w.foreground_processes[]? | { pid: .pid, cmd: (.cmdline[0] // "") } ]
@@ -152,16 +153,40 @@ sanitize_title() {
     tr -d '\000-\037\177' | cut -c1-"$TITLE_MAX"
 }
 
-# A record that carries nameSource was named by the CLI, not the user.
-claude_user_name() {
-    local config_dir="$1" pid="$2" record="$1/sessions/$2.json"
-    [[ -r "$record" ]] || return 1
-    jq -e '(has("nameSource") | not) and (.kind == "interactive")' "$record" >/dev/null 2>&1 || return 1
-    jq -r '.name // empty' "$record"
+# Names the user chose, mapped to the terminal they belong to.
+#
+# A record is keyed by the pid that owns the session, and an interactive session
+# spawns background agents whose records sit under a daemon several levels down.
+# The name the user sees in a window can therefore live on a descendant's
+# record, not on the window's own foreground process — so attribute every record
+# to each of its ancestors and let the window pick the newest match. A record
+# carrying nameSource was named by the CLI, not the user, and is skipped.
+owned_names() {
+    local -A parent=()
+    local pid ppid f rp name upd anc i
+    while read -r pid ppid; do parent[$pid]=$ppid; done < <(ps -eo pid=,ppid=)
+    for f in "$HOME"/.claude-*/sessions/*.json; do
+        [[ -e "$f" ]] || continue
+        jq -e 'has("nameSource") | not' "$f" >/dev/null 2>&1 || continue
+        read -r rp upd name < <(jq -r '[(.pid|tostring), ((.updatedAt // 0)|tostring), (.name // "")] | @tsv' "$f" | sed 's/\t/ /; s/\t/ /')
+        [[ -z "$name" || -z "$rp" ]] && continue
+        anc="$rp"
+        for ((i = 0; i < 14; i++)); do
+            [[ -z "$anc" || "$anc" == "1" ]] && break
+            jq -cn --argjson s "$anc" --argjson u "${upd:-0}" --arg n "$name" '{shell:$s, updated:$u, name:$n}'
+            anc="${parent[$anc]}"
+        done
+    done
+}
+
+# Newest user-chosen name belonging to the terminal whose shell is $1.
+name_for_shell() {
+    jq -rs --argjson s "$1" 'map(select(.shell == $s)) | sort_by(.updated) | last | .name // empty' <<< "$2"
 }
 
 apply_titles() {
-    local windows="$1" w sock kitty_win owned name pid cmd base config_dir applied
+    local windows="$1" names w sock kitty_win owned shell has_claude name applied
+    names=$(owned_names)
     # One JSON object per line, fields read individually — a delimited format
     # would collapse empty fields (tab is IFS whitespace) and shift them.
     while IFS= read -r w; do
@@ -169,15 +194,12 @@ apply_titles() {
         sock=$(jq -r '.sock' <<< "$w")
         kitty_win=$(jq -r '.kitty_win' <<< "$w")
         owned=$(jq -r '.owned // ""' <<< "$w")
-        pid=$(jq -r '.pid // ""' <<< "$w")
-        cmd=$(jq -r '.cmd // ""' <<< "$w")
+        shell=$(jq -r '.shell // 0' <<< "$w")
+        has_claude=$(jq -r '.has_claude' <<< "$w")
         [[ -z "$sock" ]] && continue
         applied=""
-        base="${cmd##*/}"
-        if [[ "$base" == "claude" && -n "$pid" ]]; then
-            config_dir=$(env_value "$pid" CLAUDE_CONFIG_DIR)
-            [[ -z "$config_dir" ]] && config_dir="$HOME/.claude"
-            name=$(claude_user_name "$config_dir" "$pid" | sanitize_title)
+        if [[ "$has_claude" == "true" ]]; then
+            name=$(name_for_shell "$shell" "$names" | sanitize_title)
             if [[ -n "$name" ]]; then
                 if [[ "$owned" != "$name" ]]; then
                     kitty @ --to "$sock" set-window-title --match "id:$kitty_win" "$name" 2>/dev/null
@@ -186,8 +208,8 @@ apply_titles() {
                 applied=1
             fi
         fi
-        # We set this title once and the session is gone or no longer user-named:
-        # hand the title back to the program running in the window.
+        # We set this title once and the session is gone or no longer named by
+        # the user: hand the title back to the program running in the window.
         if [[ -z "$applied" && -n "$owned" ]]; then
             kitty @ --to "$sock" set-window-title --match "id:$kitty_win" --temporary 2>/dev/null
             kitty @ --to "$sock" set-user-vars --match "id:$kitty_win" "$TITLE_VAR" 2>/dev/null
@@ -207,10 +229,9 @@ names_fingerprint() {
 title_pass() {
     local kitty_meta
     kitty_meta=$(kitty_windows | jq -c --arg v "$TITLE_VAR" \
-        '(.fg // []) as $f
-         | (($f | map(select((.cmd | split("/") | last) == "claude")) | .[0]) // $f[0] // {}) as $p
-         | { sock: .sock, kitty_win: .kitty_win, owned: (.user_vars[$v] // ""),
-             pid: ($p.pid // ""), cmd: ($p.cmd // "") }' 2>/dev/null)
+        '{ sock: .sock, kitty_win: .kitty_win, owned: (.user_vars[$v] // ""),
+           shell: (.shell // 0),
+           has_claude: (((.fg // []) | map(.cmd | split("/") | last) | index("claude")) != null) }' 2>/dev/null)
     [[ -n "$kitty_meta" ]] && apply_titles "$kitty_meta"
 }
 
