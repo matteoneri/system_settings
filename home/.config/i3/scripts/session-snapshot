@@ -75,7 +75,9 @@ env_value() {
 # Newest recorded session for a cwd under one account. Fallback only; inexact.
 newest_session_for() {
     local config_dir="$1" cwd="$2" slug
+    # Both separators become dashes: /home/x/.worktrees/y -> -home-x--worktrees-y
     slug="${cwd//\//-}"
+    slug="${slug//./-}"
     fd -e jsonl . "$config_dir/projects/$slug" 2>/dev/null \
         | xargs -r ls -t 2>/dev/null | head -1 | xargs -r basename | sed 's/\.jsonl$//'
 }
@@ -231,7 +233,8 @@ write_snapshot() {
                      { type: "leaf", percent: (.percent // 0), restore: false }
                  else
                      ($kitty[(.window|tostring)] // {}) as $kw |
-                     { type: "leaf", percent: (.percent // 0), restore: true,
+                     { type: "leaf", percent: (.percent // 0),
+                       restore: ($kw.cwd != null),
                        cwd: ($kw.cwd // null), agent: ($kw.agent // null),
                        session_id: ($kw.session_id // null),
                        config_dir: ($kw.config_dir // null),
@@ -269,8 +272,10 @@ tick() {
     restore_in_progress && return 0
     local kitty_meta
     kitty_meta=$(kitty_windows | jq -c --arg v "$TITLE_VAR" \
-        '{ sock: .sock, kitty_win: .kitty_win, owned: (.user_vars[$v] // ""),
-           pid: (.fg[0].pid // ""), cmd: (.fg[0].cmd // "") }' 2>/dev/null)
+        '(.fg // []) as $f
+         | (($f | map(select((.cmd | split("/") | last) == "claude")) | .[0]) // $f[0] // {}) as $p
+         | { sock: .sock, kitty_win: .kitty_win, owned: (.user_vars[$v] // ""),
+             pid: ($p.pid // ""), cmd: ($p.cmd // "") }' 2>/dev/null)
     [[ -n "$kitty_meta" ]] && apply_titles "$kitty_meta"
     write_snapshot
 }

@@ -19,17 +19,20 @@ SESSION=$(printf '%s' "$INPUT" | jq -r '.session_id // empty')
 [ -z "$PROMPT" ] && exit 0
 [ -z "$SESSION" ] && exit 0
 
-# A session the user named with /rename owns its own title — session-snapshot
-# applies that name and locks it. Bail out before spending an API call on a
-# title we would not be allowed to set anyway. The session record omits
-# nameSource entirely when the name came from the user.
-CFG="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
-for rec in "$CFG"/sessions/*.json; do
-    [ -f "$rec" ] || continue
-    [ "$(jq -r '.sessionId // empty' "$rec" 2>/dev/null)" = "$SESSION" ] || continue
-    jq -e 'has("nameSource") | not' "$rec" >/dev/null 2>&1 && exit 0
-    break
-done
+# When session-snapshot has put a user-chosen session name in this window's
+# title, it stamps the window with I3SESSION_TITLE and locks the title. Defer to
+# that instead of spending an API call on a title we could not set anyway.
+#
+# The test is the stamp, not a guess about the name: inferring "the user renamed
+# this" from a missing nameSource field would silently disable this hook for any
+# session that happens to lack it. Anything uncertain falls through and titles as
+# before.
+SHELL_PID=$(ps -o ppid= -p "$PPID" 2>/dev/null | tr -d ' ')
+if [ -n "$KITTY_PID" ] && [ -n "$SHELL_PID" ]; then
+    OWNED=$(kitty @ --to "unix:@kitty-$KITTY_PID" ls --match "pid:$SHELL_PID" 2>/dev/null \
+        | jq -r '[.. | objects | select(has("user_vars")) | .user_vars.I3SESSION_TITLE // empty] | .[0] // empty' 2>/dev/null)
+    [ -n "$OWNED" ] && exit 0
+fi
 
 STATE="/tmp/claude-title-$SESSION"
 PREV=""
@@ -66,7 +69,6 @@ TITLE=$(printf '%s' "$RESPONSE" | jq -r '.content[0].text // empty' 2>/dev/null 
 
 printf '%s' "$TITLE" > "$STATE"
 
-SHELL_PID=$(ps -o ppid= -p "$PPID" 2>/dev/null | tr -d ' ')
 if [ -n "$KITTY_PID" ] && [ -n "$SHELL_PID" ]; then
     kitty @ --to "unix:@kitty-$KITTY_PID" set-window-title \
         --match "pid:$SHELL_PID" "$TITLE" 2>/dev/null

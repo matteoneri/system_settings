@@ -282,12 +282,14 @@ while IFS= read -r ws; do
         tries=$((tries + 1))
     done
 
+    # Re-read rather than reusing the polled list: it is up to one interval old,
+    # and a slot filled in the meantime is a real terminal now, not a placeholder.
     while IFS= read -r con_id; do
         [[ -z "$con_id" ]] && continue
         i3-msg "[con_id=$con_id] kill" >/dev/null 2>&1
         report "Workspace $ws: a terminal never appeared; removed its empty slot"
         swept=$((swept + 1))
-    done <<< "$unfilled"
+    done <<< "$(unfilled_slots "$ws")"
 
     next_index=$((next_index + slot_count))
 done < <(jq -r '.workspaces[].name' "$SNAPSHOT")
