@@ -49,6 +49,7 @@ dracut
 duf
 dunst
 e2fsprogs
+edk2-ovmf
 efibootmgr
 efitools
 electron
@@ -122,6 +123,7 @@ libdvdcss
 libgsf
 libopenraw
 libreoffice-still
+libvirt
 libwnck3
 lightdm
 lightdm-slick-greeter
@@ -206,6 +208,7 @@ python-packaging
 python-pyqt5
 python-qtpy
 python-setuptools-scm
+qemu-full
 rclone
 rebuild-detector
 reflector
@@ -225,6 +228,7 @@ starship
 strace
 strongswan
 sudo
+swtpm
 sysfsutils
 sysstat
 systemd-sysvcompat
@@ -252,6 +256,9 @@ upower
 usb_modeswitch
 usbutils
 vim
+virtiofsd
+virt-manager
+virt-viewer
 vlc
 welcome
 wget

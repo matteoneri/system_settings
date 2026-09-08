@@ -210,6 +210,9 @@ eval "$(starship init zsh)"
 # starship's and wins. See ~/Documents/Projects/ActiveProjects/OWN/claude-code-terminal-title
 source "$HOME/Documents/Projects/ActiveProjects/OWN/claude-code-terminal-title/shell/terminal-title.zsh"
 
+# CBUAE Windows VM control: cbuae up|down|console|status|restart|kill|shot
+source "$HOME/VMs/cbuae-vm.zsh"
+
 # System info on terminal open
 fastfetch
 

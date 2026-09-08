@@ -2,7 +2,7 @@
 Type=Application
 Name=pCloud Drive
 Comment=Cloud storage service for your files
-Exec="/home/matteo/.config/pcloud/pcloud-launcher.sh"
+Exec="/opt/pcloud/pcloud.bin"
 Icon=appimagekit-pcloud
 StartupWMClass=pcloud
 Terminal=false
