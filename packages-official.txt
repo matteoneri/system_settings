@@ -285,6 +285,7 @@ xorg-xkill
 xorg-xrandr
 xorg-xsetroot
 xsettingsd
+xss-lock
 xterm
 yarn
 yay

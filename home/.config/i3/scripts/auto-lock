@@ -1,8 +1,26 @@
 #!/bin/bash
+# Idle locker, run by xautolock. Lock unless the user is plausibly present but
+# idle at the input devices:
+#  - a call is in progress: some app has the microphone open
+#  - a window is fullscreen: video, presentation
+# Audio playback alone is deliberately NOT an exemption: music playing on an
+# unattended laptop is exactly the case that must lock.
 
-# Skip locking if audio is playing (e.g. video call in progress)
-if pactl list sink-inputs short 2>/dev/null | grep -q .; then
+mic_in_use() {
+    pactl list source-outputs short 2>/dev/null | grep -q .
+}
+
+# Only real windows count. i3 reports every workspace container itself as
+# fullscreen_mode 1, so filtering on fullscreen_mode alone always matches.
+fullscreen_window() {
+    i3-msg -t get_tree 2>/dev/null |
+        jq -e '[.. | objects
+                | select(.type == "con" and .window != null and (.fullscreen_mode // 0) > 0)]
+               | length > 0' >/dev/null
+}
+
+if mic_in_use || fullscreen_window; then
     exit 0
 fi
 
-~/.config/i3/scripts/blur-lock
+exec ~/.config/i3/scripts/blur-lock

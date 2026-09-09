@@ -304,7 +304,14 @@ exec --no-startup-id ~/.config/i3/scripts/kbd-notify
 exec --no-startup-id ~/.screenlayout/monitor.sh
 exec --no-startup-id sleep 1 && ~/.config/i3/scripts/theme-switch
 exec --no-startup-id greenclip daemon
-exec --no-startup-id xset s 480 dpms 600 600 600
+# Screen locking is split in two:
+#  - xss-lock locks on suspend / lid close and on `loginctl lock-session`. It holds
+#    a logind sleep inhibitor until i3lock is up, so the desktop never shows on
+#    resume. `xset s off` stops the X screensaver from also triggering it on idle.
+#  - xautolock handles idle locking, with the DND toggle and the call/fullscreen
+#    exemptions in scripts/auto-lock.
+exec --no-startup-id xset s off dpms 600 600 600
+exec --no-startup-id xss-lock --transfer-sleep-lock -- ~/.config/i3/scripts/blur-lock
 exec --no-startup-id xautolock -time 10 -locker "~/.config/i3/scripts/auto-lock"
 exec --no-startup-id ~/.config/i3/scripts/resume-refresh
 # Session restore: the watcher snapshots layout/cwds/agent sessions on an

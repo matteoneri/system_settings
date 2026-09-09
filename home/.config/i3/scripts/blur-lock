@@ -1,12 +1,30 @@
 #!/bin/bash
+# Lock the screen behind a blurred screenshot; fall back to a flat colour.
+#
+# Callers: the $mod+Escape binding, xautolock (idle) and xss-lock (suspend,
+# lid close, `loginctl lock-session`). xss-lock hands over a logind sleep
+# inhibitor in XSS_SLEEP_LOCK_FD; the system will not suspend until every copy
+# of that fd is closed. i3lock forks only after the screen is locked, so the
+# sequence in lock() releases the inhibitor exactly when the lock is in place.
+# Pattern from xss-lock's transfer-sleep-lock-i3lock.sh example.
 
 PICTURE=$(mktemp /tmp/i3lock.XXXXXX.png)
 BLUR="0x8"
 
+lock() {
+    if [[ -e /dev/fd/${XSS_SLEEP_LOCK_FD:--1} ]]; then
+        # Start i3lock without a copy of the sleep-lock fd; it returns once locked.
+        i3lock "$@" {XSS_SLEEP_LOCK_FD}<&-
+        # Close the last copy: the system may suspend now.
+        exec {XSS_SLEEP_LOCK_FD}<&-
+    else
+        i3lock "$@"
+    fi
+}
+
 if scrot -o "$PICTURE" && magick "$PICTURE" -blur "$BLUR" "$PICTURE"; then
-    i3lock -i "$PICTURE"
-    rm -f "$PICTURE"
+    lock -i "$PICTURE"
 else
-    rm -f "$PICTURE"
-    i3lock -c 282c34
+    lock -c 282c34
 fi
+rm -f "$PICTURE"
