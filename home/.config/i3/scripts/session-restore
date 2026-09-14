@@ -162,6 +162,9 @@ valid_workspace_name() { [[ -n "$1" && "$1" != *'"'* && "$1" != *';'* ]]; }
 valid_session_id()     { [[ "$1" =~ $UUID_RE ]]; }
 valid_cwd()            { [[ -n "$1" && "$1" == /* && -d "$1" ]]; }
 valid_config_dir()     { [[ "$1" == "$HOME/.claude-fna" || "$1" == "$HOME/.claude-own" || "$1" == "$HOME/.claude" ]]; }
+# Codex keeps the account in CODEX_HOME. ~/.codex is the symlink to the OWN home, which
+# is what a codex started outside the shell wrapper writes to.
+valid_codex_home()     { [[ "$1" == "$HOME/.codex-fna" || "$1" == "$HOME/.codex-own" || "$1" == "$HOME/.codex" ]]; }
 
 # Sourcing this file exposes the helpers above for testing without running a
 # restore. Executing it normally proceeds.
@@ -256,8 +259,12 @@ while IFS= read -r ws; do
                 fi
                 ;;
             codex)
-                if valid_session_id "$sid"; then
-                    kitty --name "$inst" --directory "$cwd" -e codex resume "$sid" & disown
+                # Snapshots taken before the two-home split carry no config_dir; those
+                # sessions all belong to the OWN home, which ~/.codex points at.
+                [[ -z "$cdir" ]] && cdir="$HOME/.codex-own"
+                if valid_session_id "$sid" && valid_codex_home "$cdir"; then
+                    kitty --name "$inst" --directory "$cwd" -e \
+                        env "CODEX_HOME=$cdir" codex resume "$sid" & disown
                 else
                     kitty --name "$inst" --directory "$cwd" & disown
                     report "$inst: session unusable, opened a shell"

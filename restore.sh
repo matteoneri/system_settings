@@ -32,6 +32,7 @@ ALL_CONFIG_COMPONENTS=(
     paru-conf
     autostart
     claude
+    codex
     screenlayout
     dev-tools
 )
@@ -53,6 +54,7 @@ KNOWN_COMPONENTS=(
     paru-conf
     autostart
     claude         # merge Claude Code prefs into ~/.claude-{own,fna}
+    codex          # config + AGENTS.md into ~/.codex-{own,fna} + shared memory
     screenlayout
     dev-tools      # pyenv, rustup, nvm
 )
@@ -279,6 +281,20 @@ with open('$target', 'w') as f: json.dump(data, f, indent=2); f.write('\n')
             echo "    Skipping claude-${acct} (log in first with: CLAUDE_CONFIG_DIR=~/.claude-${acct} claude)"
         fi
     done
+}
+
+restore_codex() {
+    echo "==> codex..."
+    mkdir -p "$HOME/.codex-own" "$HOME/.codex-fna" "$HOME/.codex-shared/skills"
+    for acct in own fna; do
+        cp "$HOME_DIR/codex/${acct}/config.toml" "$HOME/.codex-${acct}/config.toml"
+        cp "$HOME_DIR/codex/${acct}/AGENTS.md" "$HOME/.codex-${acct}/AGENTS.md"
+    done
+    cp "$HOME_DIR/codex/shared/MEMORY.md" "$HOME/.codex-shared/MEMORY.md"
+    # The shell wrapper always sets CODEX_HOME; this symlink is what a codex started
+    # outside it (an i3 restore, a script) falls back to.
+    [ -e "$HOME/.codex" ] || ln -s .codex-own "$HOME/.codex"
+    echo "    Authenticate each account: codex --own  /  codex --fna, then /login"
 }
 
 restore_screenlayout() {

@@ -75,6 +75,15 @@ for acct in own fna; do
         "$HOME/.claude-${acct}/settings.json" > "$HOME_DIR/claude-code/${acct}/settings.json" 2>/dev/null || true
 done
 
+# Codex: per-account config and global instructions, plus the shared memory both
+# homes read. Credentials live in auth.json and are never copied.
+mkdir -p "$HOME_DIR/codex/own" "$HOME_DIR/codex/fna" "$HOME_DIR/codex/shared"
+for acct in own fna; do
+    cp "$HOME/.codex-${acct}/config.toml" "$HOME_DIR/codex/${acct}/config.toml"
+    cp "$HOME/.codex-${acct}/AGENTS.md" "$HOME_DIR/codex/${acct}/AGENTS.md"
+done
+cp "$HOME/.codex-shared/MEMORY.md" "$HOME_DIR/codex/shared/MEMORY.md"
+
 # Neovim
 mkdir -p "$HOME_DIR/.config/nvim/lua/plugins"
 cp ~/.config/nvim/init.lua "$HOME_DIR/.config/nvim/init.lua"
