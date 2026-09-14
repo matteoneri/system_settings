@@ -23,6 +23,9 @@ pass() { echo "  ok: $*"; }
 SCRATCH="$(mktemp -d)"
 trap 'rm -rf "$SCRATCH"' EXIT
 export DATASAVE_STATE="$SCRATCH/datasave-state"
+# The toggle must resolve the tracked status script, not the installed one,
+# or the suite silently exercises whatever happens to be on the machine.
+export DATASAVE_STATUS="$STATUS"
 
 # Asserts a command's stdout equals an expected string.
 assert_out() {
@@ -101,6 +104,93 @@ bash "$STATUS" bogus >/dev/null 2>&1
 [[ $? -eq 2 ]] \
     && pass "an unknown subcommand exits 2" \
     || fail "an unknown subcommand did not exit 2"
+
+echo "== datasave-status can turn the mode on without recording a consumer =="
+state_off
+bash "$STATUS" on >/dev/null 2>&1
+assert_true  "on turns the mode on"                      bash "$STATUS" is-on
+assert_false "on records no consumer"                    bash "$STATUS" stopped pcloud
+bash "$STATUS" clear >/dev/null 2>&1
+
+# ---------------------------------------------------------------------------
+# datasave-toggle. Every external effect is stubbed: the suite replaces the
+# consumer list with fakes it controls, so no real service is ever touched.
+# ---------------------------------------------------------------------------
+
+export NOTIFY_LOG="$SCRATCH/notify.log"   # exported: the stub runs as a child process
+
+# Sources the toggle with a stubbed consumer set. $1 = whether the fake stop
+# succeeds ("ok") or fails ("broken").
+load_toggle() {
+    local behaviour="$1"
+    CONSUMERS="fake"
+    NOTIFY_SEND="$SCRATCH/stub-notify"
+    export CONSUMERS NOTIFY_SEND
+    cat > "$SCRATCH/stub-notify" <<'STUB'
+#!/bin/bash
+printf '%s\n' "$*" >> "$NOTIFY_LOG"
+STUB
+    chmod +x "$SCRATCH/stub-notify"
+    # shellcheck disable=SC1090
+    source "$TOGGLE" >/dev/null 2>&1 || return 1
+    if [[ "$behaviour" == "ok" ]]; then
+        ds_stop_fake()  { STOPPED=1; return 0; }
+        ds_start_fake() { STARTED=1; return 0; }
+    else
+        ds_stop_fake()  { return 1; }
+        ds_start_fake() { STARTED=1; return 0; }
+    fi
+}
+
+echo "== the toggle records only what it actually stopped =="
+state_off; STOPPED=0; STARTED=0; : > "$NOTIFY_LOG"
+if load_toggle ok; then
+    enable_mode >/dev/null 2>&1
+    assert_true "enabling turns the mode on"          bash "$STATUS" is-on
+    assert_true "a stopped consumer is recorded"      bash "$STATUS" stopped fake
+    [[ "$STOPPED" == "1" ]] && pass "the consumer's stop ran" || fail "the consumer's stop did not run"
+    [[ -s "$NOTIFY_LOG" ]] && pass "enabling notifies" || fail "enabling sent no notification"
+else
+    fail "could not source $TOGGLE to reach its functions"
+fi
+
+echo "== a consumer that fails to stop is not recorded =="
+state_off; : > "$NOTIFY_LOG"
+if load_toggle broken; then
+    enable_mode >/dev/null 2>&1
+    assert_true  "the mode still turns on"                 bash "$STATUS" is-on
+    assert_false "a consumer that failed is not recorded"  bash "$STATUS" stopped fake
+    [[ -s "$NOTIFY_LOG" ]] && pass "a partial failure still notifies" || fail "a partial failure sent no notification"
+fi
+
+echo "== disabling restores only what this mode stopped =="
+state_off; STARTED=0; : > "$NOTIFY_LOG"
+if load_toggle ok; then
+    enable_mode >/dev/null 2>&1
+    STARTED=0
+    disable_mode >/dev/null 2>&1
+    [[ "$STARTED" == "1" ]] && pass "a recorded consumer is restored" || fail "a recorded consumer was not restored"
+    assert_false "disabling turns the mode off" bash "$STATUS" is-on
+    [[ -e "$DATASAVE_STATE" ]] && fail "disabling left the state file behind" || pass "disabling removed the state file"
+fi
+
+echo "== a consumer stopped by hand beforehand is left alone =="
+state_off; STARTED=0
+if load_toggle broken; then
+    # The fake reports it could not stop it (already stopped by the user),
+    # so disabling must not start something this mode never stopped.
+    enable_mode >/dev/null 2>&1
+    STARTED=0
+    disable_mode >/dev/null 2>&1
+    [[ "$STARTED" == "0" ]] && pass "an unrecorded consumer is not started" || fail "disabling started a consumer it never stopped"
+fi
+
+echo "== sourcing the toggle has no side effects =="
+state_off
+( CONSUMERS=fake source "$TOGGLE" >/dev/null 2>&1 )
+[[ -e "$DATASAVE_STATE" ]] \
+    && fail "sourcing the toggle changed the mode" \
+    || pass "sourcing the toggle changed nothing"
 
 echo
 if (( FAILED > 0 )); then

@@ -5,6 +5,7 @@
 #   (no arg) | status   Print the indicator: a cloud glyph normally, a
 #                       struck-through cloud while data saving is on.
 #   is-on               Exit 0 when the mode is on, non-zero otherwise.
+#   on                  Turn the mode on, recording no consumer.
 #   stopped <name>      Exit 0 when <name> was stopped by this mode.
 #   record <name>       Turn the mode on and record <name> as stopped by it.
 #   clear               Turn the mode off, discarding the record.
@@ -58,6 +59,8 @@ record() {
     grep -qxF -- "$name" "$STATE_FILE" 2>/dev/null || printf '%s\n' "$name" >> "$STATE_FILE"
 }
 
+turn_on() { touch "$STATE_FILE"; }
+
 clear_state() { rm -f "$STATE_FILE"; }
 
 main() {
@@ -65,11 +68,12 @@ main() {
     case "${1:-status}" in
         status)  print_status ;;
         is-on)   is_on ;;
+        on)      turn_on ;;
         stopped) stopped "${2:-}" ;;
         record)  record "${2:-}" ;;
         clear)   clear_state ;;
         *)
-            printf 'usage: %s [status|is-on|stopped <name>|record <name>|clear]\n' "${0##*/}" >&2
+            printf 'usage: %s [status|is-on|on|stopped <name>|record <name>|clear]\n' "${0##*/}" >&2
             exit 2
             ;;
     esac
