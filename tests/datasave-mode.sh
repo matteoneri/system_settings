@@ -192,6 +192,61 @@ state_off
     && fail "sourcing the toggle changed the mode" \
     || pass "sourcing the toggle changed nothing"
 
+# ---------------------------------------------------------------------------
+# The polybar consumers. A curl stub proves no network call is made, and every
+# cache path is redirected into the scratch directory.
+# ---------------------------------------------------------------------------
+
+ETH="$REPO_ROOT/home/.config/i3/scripts/eth_price"
+GCAL="$REPO_ROOT/home/.config/i3/scripts/gcal-next"
+STUBBIN="$SCRATCH/bin"
+mkdir -p "$STUBBIN"
+cat > "$STUBBIN/curl" <<'STUB'
+#!/bin/bash
+printf 'called\n' >> "$CURL_LOG"
+exit 1
+STUB
+chmod +x "$STUBBIN/curl"
+export CURL_LOG="$SCRATCH/curl.log"
+
+echo "== the polybar consumers honor the mode =="
+state_off
+bash "$STATUS" on >/dev/null 2>&1
+
+: > "$CURL_LOG"
+printf '%s\n' "CACHED-ETH" > "$SCRATCH/eth-cache"
+out="$(PATH="$STUBBIN:$PATH" ETH_PRICE_CACHE="$SCRATCH/eth-cache" bash "$ETH" 2>/dev/null)"
+[[ "$out" == "CACHED-ETH" ]] \
+    && pass "eth_price serves its cached value while the mode is on" \
+    || fail "eth_price printed '$out' instead of the cached value"
+[[ -s "$CURL_LOG" ]] \
+    && fail "eth_price made a network call while the mode is on" \
+    || pass "eth_price made no network call while the mode is on"
+
+out="$(PATH="$STUBBIN:$PATH" ETH_PRICE_CACHE="$SCRATCH/nope" bash "$ETH" 2>/dev/null)"
+[[ -n "$out" ]] \
+    && pass "eth_price still renders with no cache (module stays on the bar)" \
+    || fail "eth_price printed nothing with no cache, which hides the module"
+
+out="$(GCAL_CACHE_FILE="$SCRATCH/nope" bash "$GCAL" 2>/dev/null)"
+[[ -n "$out" ]] \
+    && pass "gcal-next renders a marker with no cache instead of vanishing" \
+    || fail "gcal-next printed nothing with no cache, which hides the module"
+
+printf '2020-01-01\n09:00 10:00 Old meeting\n' > "$SCRATCH/gcal-stale"
+out="$(GCAL_CACHE_FILE="$SCRATCH/gcal-stale" bash "$GCAL" 2>/dev/null)"
+[[ "$out" != *"Old meeting"* && -n "$out" ]] \
+    && pass "gcal-next does not present a previous day's events as today's" \
+    || fail "gcal-next printed '$out' for a stale-day cache"
+
+echo "== with the mode off the consumers fetch as before =="
+bash "$STATUS" clear >/dev/null 2>&1
+: > "$CURL_LOG"
+PATH="$STUBBIN:$PATH" ETH_PRICE_CACHE="$SCRATCH/eth-cache" bash "$ETH" >/dev/null 2>&1
+[[ -s "$CURL_LOG" ]] \
+    && pass "eth_price fetches when the mode is off" \
+    || fail "eth_price did not fetch when the mode is off"
+
 echo
 if (( FAILED > 0 )); then
     echo "FAILED: $FAILED assertion(s)"

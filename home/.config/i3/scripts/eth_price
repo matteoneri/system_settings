@@ -1,11 +1,35 @@
 #!/bin/bash
 
+# Polybar ETH/USD module. Fetches the price with 24h change from CoinGecko,
+# caching the rendered line so data saving mode can serve the last value instead
+# of fetching every 60s.
+#
+# The cache lives in the runtime directory, not /tmp: polybar interprets click
+# tags in a module's output, so the file this script prints verbatim should not
+# sit in a world-writable directory.
+
+DATASAVE_STATUS="${DATASAVE_STATUS:-$HOME/.config/i3/scripts/datasave-status}"
+CACHE_FILE="${ETH_PRICE_CACHE:-${XDG_RUNTIME_DIR:-/tmp}/polybar-eth-price-cache}"
+PLACEHOLDER=$'\ued58 --'
+
+# Data saving mode: serve the last rendered value and make no network call. With
+# no cache yet, fall back to the same placeholder a failed fetch prints, so the
+# module keeps rendering rather than vanishing from the bar.
+if "$DATASAVE_STATUS" is-on 2>/dev/null; then
+    if [ -s "$CACHE_FILE" ]; then
+        cat "$CACHE_FILE"
+    else
+        echo "$PLACEHOLDER"
+    fi
+    exit 0
+fi
+
 # Fetch ETH/USD price with 24h change from CoinGecko API
 data=$(curl -sf --max-time 5 \
   'https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd&include_24hr_change=true')
 
 if [ $? -ne 0 ] || [ -z "$data" ]; then
-    echo $'\ued58 --'
+    echo "$PLACEHOLDER"
     exit 0
 fi
 
@@ -28,4 +52,5 @@ else
     color="#f45070"
 fi
 
-echo "%{F$color}$(printf '\ued58') $formatted_price (${formatted_change}%)%{F-}"
+rendered="%{F$color}$(printf '\ued58') $formatted_price (${formatted_change}%)%{F-}"
+printf '%s\n' "$rendered" | tee "$CACHE_FILE"

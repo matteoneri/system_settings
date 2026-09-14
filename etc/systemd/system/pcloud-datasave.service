@@ -1,0 +1,24 @@
+[Unit]
+Description=Stop pCloud and release its FUSE mount for data saving mode
+Documentation=file:///home/matteo/Documents/Projects/system_settings/docs/datasave-mode.md
+# Runs the same teardown as the sleep path, for a different reason: data saving
+# mode stops pCloud on demand rather than before a freeze. It exists because the
+# teardown needs privileges the desktop user does not have -- pcloud-teardown
+# gates its FUSE abort on `[ -w /sys/fs/fuse/connections/<n>/abort ]` and calls
+# `umount -l`, both root-only, so a user-run teardown silently degrades to
+# SIGTERM/SIGKILL and cannot release a D-state wedge.
+#
+# Deliberately NO [Install] section: this unit is manual-start-only, started by
+# ~/.config/i3/scripts/datasave-toggle. pcloud-suspend.service carries WantedBy=
+# sleep targets; copying those here would make the teardown fire on every suspend
+# a second time.
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/pcloud-teardown
+# Same reasoning as pcloud-suspend.service: pcloud-teardown allows pCloud 5s to
+# exit cleanly before killing it, and both timeouts bound the run and its kill
+# phase. Nothing waits on this job the way the suspend sequence does, but an
+# unbounded start would leave the toggle reporting neither success nor failure.
+TimeoutStartSec=30
+TimeoutStopSec=10

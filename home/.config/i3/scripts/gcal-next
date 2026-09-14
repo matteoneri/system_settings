@@ -2,7 +2,7 @@
 # Polybar interval script for Google Calendar events
 # Runs once per invocation: refreshes cache if stale, prints next event with color states
 
-CACHE_FILE="/tmp/polybar-gcal-cache"
+CACHE_FILE="${GCAL_CACHE_FILE:-/tmp/polybar-gcal-cache}"
 FORCE_FILE="/tmp/polybar-gcal-force"
 ALERT_DIR="/tmp/polybar-gcal-alerts"
 MAX_TITLE_LEN=30
@@ -18,6 +18,10 @@ COLOR_LIVE="#f45070"
 # Icons (font 2)
 ICON_NORMAL="%{T2}󰃰%{T-}"
 ICON_LIVE="%{T2}󰕧%{T-}"
+ICON_PAUSED="%{T2}󰅤%{T-}"  # nf-md-cloud_off_outline — data saving mode is on
+
+DATASAVE_STATUS="${DATASAVE_STATUS:-$HOME/.config/i3/scripts/datasave-status}"
+datasave_on() { "$DATASAVE_STATUS" is-on 2>/dev/null; }
 
 GCALCLI="${GCALCLI:-$(command -v gcalcli 2>/dev/null || echo "$HOME/.pyenv/versions/3.12.3/bin/gcalcli")}"
 [[ -x "$GCALCLI" ]] || exit 0
@@ -37,6 +41,9 @@ time_to_min() {
 
 refresh_cache() {
     local force=$1
+    # Data saving mode: make no network call. This returns before the day-change
+    # branch below, which would otherwise clear the alert directory and refetch.
+    datasave_on && return 0
     local today=$(date +%Y-%m-%d)
     local refresh=$force
 
@@ -84,8 +91,20 @@ fi
 
 refresh_cache $force
 
-# No cache (gcalcli failed)
-[[ ! -f "$CACHE_FILE" ]] && exit 0
+# No cache (gcalcli failed, or data saving mode has never had one). Exiting
+# silently would empty the module's output and hide it from the bar entirely, so
+# while the mode is on print a neutral marker instead.
+if [[ ! -f "$CACHE_FILE" ]]; then
+    datasave_on && echo "$ICON_PAUSED"
+    exit 0
+fi
+
+# Data saving mode holding a cache from an earlier day: showing yesterday's
+# schedule as today's is worse than showing nothing.
+if datasave_on && [[ "$(head -1 "$CACHE_FILE")" != "$(date +%Y-%m-%d)" ]]; then
+    echo "$ICON_PAUSED"
+    exit 0
+fi
 
 # No events scheduled today
 event_count=$(( $(wc -l < "$CACHE_FILE") - 1 ))

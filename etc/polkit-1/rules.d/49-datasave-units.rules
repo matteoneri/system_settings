@@ -1,0 +1,31 @@
+/* Let the desktop user start and stop exactly the two system units data saving
+ * mode manages, without an authentication prompt.
+ *
+ * org.freedesktop.systemd1.manage-units is auth_admin_keep for active sessions,
+ * so without this rule ~/.config/i3/scripts/datasave-toggle cannot stop them.
+ * The toggle passes --no-ask-password, so the failure is silent and soft rather
+ * than a modal password dialog -- the mode simply reports those two consumers as
+ * not stopped. Installing this rule is what makes them work.
+ *
+ * Scoped deliberately: one user, two units, and no other systemd action. It
+ * grants nothing the user cannot already do by closing the lid (which runs the
+ * same teardown) or by authenticating once.
+ *
+ * Install by hand -- this repository backs up /etc but never restores it:
+ *   sudo install -m 0644 -o root -g root \
+ *     etc/polkit-1/rules.d/49-datasave-units.rules \
+ *     /etc/polkit-1/rules.d/49-datasave-units.rules
+ */
+polkit.addRule(function (action, subject) {
+    if (action.id !== "org.freedesktop.systemd1.manage-units") {
+        return polkit.Result.NOT_HANDLED;
+    }
+    if (subject.user !== "matteo") {
+        return polkit.Result.NOT_HANDLED;
+    }
+    var unit = action.lookup("unit");
+    if (unit === "pcloud-datasave.service" || unit === "archlinux-keyring-wkd-sync.timer") {
+        return polkit.Result.YES;
+    }
+    return polkit.Result.NOT_HANDLED;
+});
