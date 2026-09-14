@@ -91,7 +91,7 @@ ds_stop_newsboat() {
 
 ds_start_newsboat() {
     # The for_window rule in ~/.config/i3/config returns it to the scratchpad.
-    kitty --class "$NEWSBOAT_CLASS" -e newsboat >/dev/null 2>&1 &
+    kitty --class "$NEWSBOAT_CLASS" -e "$HOME/.config/i3/scripts/newsboat-launch" >/dev/null 2>&1 &
     disown
 }
 

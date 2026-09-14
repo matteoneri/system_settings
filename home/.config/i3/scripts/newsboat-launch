@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+#
+# newsboat-launch — start newsboat, suppressing its background auto-reload while
+# data saving mode is on.
+#
+# newsboat is launched once at login and parked in the scratchpad, so its
+# auto-reload keeps fetching 33 feeds in the background. It reads that setting
+# only at startup and offers no per-setting flag, so the mode is applied by
+# starting it against an override config.
+#
+# Used by ~/.config/i3/config (the login launch and the $mod+Shift+y dropdown)
+# and by ~/.config/i3/scripts/datasave-toggle when it restores newsboat.
+
+DATASAVE_STATUS="${DATASAVE_STATUS:-$HOME/.config/i3/scripts/datasave-status}"
+OVERRIDE="${NEWSBOAT_DATASAVE_CONFIG:-$HOME/.config/newsboat/config.datasave}"
+
+if "$DATASAVE_STATUS" is-on 2>/dev/null && [ -f "$OVERRIDE" ]; then
+    exec newsboat -C "$OVERRIDE" "$@"
+fi
+
+exec newsboat "$@"

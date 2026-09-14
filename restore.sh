@@ -237,6 +237,7 @@ restore_newsboat() {
     mkdir -p "$HOME/.config/newsboat"
     cp "$HOME_DIR/.config/newsboat/config" "$HOME/.config/newsboat/config"
     cp "$HOME_DIR/.config/newsboat/urls" "$HOME/.config/newsboat/urls"
+    cp "$HOME_DIR/.config/newsboat/config.datasave" "$HOME/.config/newsboat/config.datasave"
 }
 
 restore_pacman_conf() {

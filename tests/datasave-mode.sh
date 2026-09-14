@@ -247,6 +247,52 @@ PATH="$STUBBIN:$PATH" ETH_PRICE_CACHE="$SCRATCH/eth-cache" bash "$ETH" >/dev/nul
     && pass "eth_price fetches when the mode is off" \
     || fail "eth_price did not fetch when the mode is off"
 
+echo "== the login sweep restores the timer and clears stale state =="
+cat > "$STUBBIN/stub-systemctl" <<'STUB'
+#!/bin/bash
+printf '%s\n' "$*" >> "$SYSTEMCTL_LOG"
+exit 0
+STUB
+chmod +x "$STUBBIN/stub-systemctl"
+export SYSTEMCTL_LOG="$SCRATCH/systemctl.log"
+: > "$SYSTEMCTL_LOG"
+state_off
+bash "$STATUS" record keyring >/dev/null 2>&1   # a mode left on across logout
+(
+    SYSTEMCTL="$STUBBIN/stub-systemctl"
+    CONSUMERS="fake"
+    export SYSTEMCTL CONSUMERS
+    # shellcheck disable=SC1090
+    source "$TOGGLE" >/dev/null 2>&1
+    reconcile_session >/dev/null 2>&1
+)
+grep -q "start archlinux-keyring-wkd-sync.timer" "$SYSTEMCTL_LOG" \
+    && pass "the sweep starts the keyring timer" \
+    || fail "the sweep did not start the keyring timer"
+grep -q -- "--no-ask-password" "$SYSTEMCTL_LOG" \
+    && pass "the sweep cannot raise a password prompt" \
+    || fail "the sweep omitted --no-ask-password, so it could block on a dialog"
+assert_false "the sweep clears stale state" bash "$STATUS" is-on
+
+echo "== the desktop wiring is actually reachable =="
+I3="$REPO_ROOT/home/.config/i3/config"
+BAR="$REPO_ROOT/home/.config/polybar/config.ini"
+grep -q 'bindsym \$mod+Shift+z exec --no-startup-id ~/.config/i3/scripts/datasave-toggle' "$I3" \
+    && pass "\$mod+Shift+z is bound to the toggle" \
+    || fail "\$mod+Shift+z is not bound"
+grep -q 'datasave-toggle reconcile' "$I3" \
+    && pass "the login sweep is wired into i3" \
+    || fail "the login sweep is not wired into i3"
+grep -q 'dropdown-newsboat -e ~/.config/i3/scripts/newsboat-launch' "$I3" \
+    && pass "newsboat starts through the launcher at login" \
+    || fail "newsboat still starts without the launcher, so the mode cannot reach it"
+grep -q '^\[module/datasave\]' "$BAR" \
+    && pass "the polybar module block exists" \
+    || fail "the polybar module block is missing"
+grep -qE '^modules-(left|center|right) =.*\bdatasave\b' "$BAR" \
+    && pass "the module is listed on a bar, not just defined" \
+    || fail "the module is defined but never listed, so it renders nowhere"
+
 echo
 if (( FAILED > 0 )); then
     echo "FAILED: $FAILED assertion(s)"

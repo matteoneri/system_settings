@@ -218,9 +218,9 @@ for_window [class="dropdown-terminal"] move scratchpad
 bindsym $mod+y exec --no-startup-id ~/.config/i3/scripts/dropdown-toggle dropdown-terminal
 
 # drop-down newsboat
-exec --no-startup-id kitty --class dropdown-newsboat -e newsboat
+exec --no-startup-id kitty --class dropdown-newsboat -e ~/.config/i3/scripts/newsboat-launch
 for_window [class="dropdown-newsboat"] move scratchpad
-bindsym $mod+Shift+y exec --no-startup-id ~/.config/i3/scripts/dropdown-toggle dropdown-newsboat newsboat
+bindsym $mod+Shift+y exec --no-startup-id ~/.config/i3/scripts/dropdown-toggle dropdown-newsboat ~/.config/i3/scripts/newsboat-launch
 
 # open new empty workspace
 bindsym $mod+Shift+n exec --no-startup-id ~/.config/i3/scripts/empty_workspace
@@ -266,6 +266,9 @@ bindsym $mod+c exec --no-startup-id rofi -modi "clipboard:greenclip print" -show
 
 # Do Not Disturb toggle
 bindsym $mod+z exec --no-startup-id ~/.config/i3/scripts/dnd-toggle
+
+# Data saving toggle — beside DND, so one key carries both machine-wide modes
+bindsym $mod+Shift+z exec --no-startup-id ~/.config/i3/scripts/datasave-toggle
 
 ##########################################
 # configuration for workspace behaviour: #
@@ -319,6 +322,12 @@ exec --no-startup-id ~/.config/i3/scripts/resume-refresh
 # so neither re-runs on reload or restart-in-place.
 exec --no-startup-id ~/.config/i3/scripts/session-snapshot
 exec --no-startup-id ~/.config/i3/scripts/session-restore
+
+# Data saving mode is session-scoped, but its state lives in the runtime
+# directory, which logind removes at logout -- so a mode left on loses its record
+# while the keyring timer stays stopped. This sweep restores the timer and clears
+# stale state at login. Starting an already-running timer is a no-op.
+exec --no-startup-id ~/.config/i3/scripts/datasave-toggle reconcile
 
 ##################
 # floating rules #

@@ -43,6 +43,7 @@ cp ~/.config/dunst/dunstrc "$HOME_DIR/.config/dunst/dunstrc"
 # Newsboat
 cp ~/.config/newsboat/config "$HOME_DIR/.config/newsboat/config"
 cp ~/.config/newsboat/urls "$HOME_DIR/.config/newsboat/urls"
+cp ~/.config/newsboat/config.datasave "$HOME_DIR/.config/newsboat/config.datasave"
 
 # Pacman & Paru
 cp ~/.config/pacman/pacman.conf "$HOME_DIR/.config/pacman/pacman.conf"

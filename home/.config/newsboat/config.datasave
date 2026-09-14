@@ -1,0 +1,8 @@
+# Data saving mode override, used by ~/.config/i3/scripts/newsboat-launch when
+# ~/.config/i3/scripts/datasave-status reports the mode is on.
+#
+# newsboat reads auto-reload once at startup and has no per-setting flag, only
+# -C, so suppressing background fetches means starting it with this file. A
+# reload asked for by hand still works.
+include ~/.config/newsboat/config
+auto-reload no
