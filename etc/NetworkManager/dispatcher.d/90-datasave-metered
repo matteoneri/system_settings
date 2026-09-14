@@ -1,0 +1,56 @@
+#!/bin/bash
+#
+# 90-datasave-metered — offer data saving mode when joining a metered connection.
+#
+# NetworkManager runs this as root on every connection event. It offers the mode
+# and never enables it: the mode changes what runs on the machine, so it asks.
+#
+# Install by hand -- this repository backs up /etc but never restores it, and
+# NetworkManager silently ignores a dispatcher script that is not root-owned or
+# that is group/world-writable:
+#   sudo install -m 0755 -o root -g root \
+#     etc/NetworkManager/dispatcher.d/90-datasave-metered \
+#     /etc/NetworkManager/dispatcher.d/90-datasave-metered
+#
+# Two things here are deliberate.
+#
+# The profile is looked up by CONNECTION_UUID, never CONNECTION_ID. A hostile
+# access point chooses its own SSID and NetworkManager turns that into the
+# profile name, so CONNECTION_ID is attacker-controlled: a name beginning with
+# "-" parses as an nmcli option, and profile names are not unique, so a name
+# chosen to collide with one the user marked metered would answer for the wrong
+# profile. CONNECTION_UUID is machine-generated and unique. CONNECTION_ID is
+# never read by this script.
+#
+# The notification text is a fixed string. dunst runs with `markup = full`, so
+# interpolating a connection name would let a hostile SSID put arbitrary markup
+# into a popup carrying the authority of a root-originated system message.
+
+set -u
+
+NMCLI="${NMCLI:-/usr/bin/nmcli}"
+SYSTEMD_RUN="${SYSTEMD_RUN:-/usr/bin/systemd-run}"
+DESKTOP_USER="${DATASAVE_DESKTOP_USER:-matteo}"
+
+# $1 = interface, $2 = action.
+[ "${2:-}" = "up" ] || exit 0
+[ -n "${CONNECTION_UUID:-}" ] || exit 0
+
+metered="$("$NMCLI" -g connection.metered connection show uuid "$CONNECTION_UUID" 2>/dev/null)"
+
+# Exactly "yes" -- the per-connection setting the user marked. NetworkManager
+# also guesses metered at the device level and reports "yes (guessed)" there,
+# which is wrong on ordinary wifi and is not what this keys on.
+[ "$metered" = "yes" ] || exit 0
+
+# Drop privilege before touching the session. The dispatcher environment carries
+# no DBUS_SESSION_BUS_ADDRESS, DISPLAY or XDG_RUNTIME_DIR, so a bare root
+# notify-send would exit non-zero and show nothing. Failure is tolerated: a
+# connection can come up at the greeter with no session to notify.
+"$SYSTEMD_RUN" --user --machine="${DESKTOP_USER}@.host" --collect --quiet \
+    /usr/bin/notify-send -u normal -a "Data Saving" \
+    "Metered connection" \
+    "Press Super+Shift+Z to stop background data use." \
+    >/dev/null 2>&1 || true
+
+exit 0

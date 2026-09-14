@@ -293,6 +293,88 @@ grep -qE '^modules-(left|center|right) =.*\bdatasave\b' "$BAR" \
     && pass "the module is listed on a bar, not just defined" \
     || fail "the module is defined but never listed, so it renders nowhere"
 
+# ---------------------------------------------------------------------------
+# The NetworkManager dispatcher. nmcli and systemd-run are stubbed, so nothing
+# queries NetworkManager and no notification reaches the session.
+# ---------------------------------------------------------------------------
+
+DISPATCH="$REPO_ROOT/etc/NetworkManager/dispatcher.d/90-datasave-metered"
+export NMCLI_LOG="$SCRATCH/nmcli.log"
+export NOTIFY_ARGS="$SCRATCH/notify-args.log"
+
+cat > "$STUBBIN/stub-nmcli" <<'STUB'
+#!/bin/bash
+printf '%s\n' "$*" >> "$NMCLI_LOG"
+printf '%s\n' "${STUB_METERED:-unknown}"
+STUB
+cat > "$STUBBIN/stub-systemd-run" <<'STUB'
+#!/bin/bash
+printf '%s\n' "$*" >> "$NOTIFY_ARGS"
+STUB
+chmod +x "$STUBBIN/stub-nmcli" "$STUBBIN/stub-systemd-run"
+
+# run_dispatch <action> <metered> <connection-id>
+run_dispatch() {
+    : > "$NOTIFY_ARGS"; : > "$NMCLI_LOG"
+    env NMCLI="$STUBBIN/stub-nmcli" SYSTEMD_RUN="$STUBBIN/stub-systemd-run" \
+        STUB_METERED="$2" CONNECTION_UUID="11111111-2222-3333-4444-555555555555" \
+        CONNECTION_ID="$3" NMCLI_LOG="$NMCLI_LOG" NOTIFY_ARGS="$NOTIFY_ARGS" \
+        bash "$DISPATCH" wlan0 "$1" >/dev/null 2>&1
+}
+
+echo "== the metered offer fires only on an explicit mark =="
+run_dispatch up yes "HomeWifi"
+[[ -s "$NOTIFY_ARGS" ]] && pass "an explicitly metered connection offers the mode" || fail "no offer on an explicitly metered connection"
+[[ "$(wc -l < "$NOTIFY_ARGS")" == "1" ]] && pass "exactly one notification" || fail "expected exactly one notification"
+
+run_dispatch up "yes (guessed)" "HomeWifi"
+[[ -s "$NOTIFY_ARGS" ]] && fail "a guessed-metered connection offered the mode" || pass "a guessed-metered connection offers nothing"
+
+run_dispatch up unknown "HomeWifi"
+[[ -s "$NOTIFY_ARGS" ]] && fail "an unmarked connection offered the mode" || pass "an unmarked connection offers nothing"
+
+run_dispatch down yes "HomeWifi"
+[[ -s "$NOTIFY_ARGS" ]] && fail "a non-up action offered the mode" || pass "only the up action offers the mode"
+
+echo "== the dispatcher does not trust the connection name =="
+run_dispatch up yes "HomeWifi"
+benign="$(cat "$NOTIFY_ARGS")"
+run_dispatch up yes '-X --evil <b>spoofed</b>'
+hostile="$(cat "$NOTIFY_ARGS")"
+[[ "$benign" == "$hostile" ]] \
+    && pass "the notification text is identical whatever the SSID is called" \
+    || fail "the connection name leaked into the notification"
+grep -q "uuid" "$NMCLI_LOG" \
+    && pass "the profile is looked up by UUID" \
+    || fail "the lookup does not use the UUID"
+grep -q "evil" "$NMCLI_LOG" \
+    && fail "the attacker-chosen connection name reached the nmcli call" \
+    || pass "the connection name never reaches the nmcli call"
+
+echo "== the tracked copies match the installed ones =="
+# sync.sh copies live -> repo, so a live edit that was never synced would leave
+# the tracked copy behind. /etc files are excluded: they are backup-only and are
+# installed by hand, so they are legitimately absent from the live machine.
+if [[ -n "${DATASAVE_STATUS_SCRIPT:-}${DATASAVE_TOGGLE_SCRIPT:-}" ]]; then
+    pass "skipped — an explicit script path was set"
+else
+    drift=0
+    for rel in .config/i3/scripts/datasave-status \
+               .config/i3/scripts/datasave-toggle \
+               .config/i3/scripts/newsboat-launch \
+               .config/i3/scripts/eth_price \
+               .config/i3/scripts/gcal-next \
+               .config/i3/config \
+               .config/polybar/config.ini \
+               .config/newsboat/config.datasave; do
+        if [[ -e "$HOME/$rel" ]] && ! diff -q "$HOME/$rel" "$REPO_ROOT/home/$rel" >/dev/null 2>&1; then
+            fail "tracked copy of $rel differs from the installed one — run sync.sh"
+            drift=1
+        fi
+    done
+    (( drift == 0 )) && pass "tracked and installed copies match"
+fi
+
 echo
 if (( FAILED > 0 )); then
     echo "FAILED: $FAILED assertion(s)"

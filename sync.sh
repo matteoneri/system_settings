@@ -98,6 +98,7 @@ cp ~/.screenlayout/monitor.sh "$HOME_DIR/.screenlayout/monitor.sh" 2>/dev/null |
 # it a restored machine silently stops freezing user sessions on suspend.
 mkdir -p "$REPO_DIR/etc/systemd/system" "$REPO_DIR/etc/systemd/logind.conf.d" \
          "$REPO_DIR/etc/systemd/system/systemd-suspend.service.d" \
+         "$REPO_DIR/etc/NetworkManager/dispatcher.d" "$REPO_DIR/etc/polkit-1/rules.d" \
          "$REPO_DIR/usr/local/bin" "$HOME_DIR/.config/systemd/user"
 for f in /etc/systemd/system/pcloud-suspend.service \
          /etc/systemd/system/pcloud-resume.service \
@@ -105,6 +106,9 @@ for f in /etc/systemd/system/pcloud-suspend.service \
          /etc/systemd/system/pcloud-sleep-failed@.service \
          /etc/systemd/system/systemd-suspend.service.d/20-fix-freeze-sessions.conf \
          /etc/systemd/logind.conf.d/10-lid.conf \
+         /etc/systemd/system/pcloud-datasave.service \
+         /etc/polkit-1/rules.d/49-datasave-units.rules \
+         /etc/NetworkManager/dispatcher.d/90-datasave-metered \
          /usr/local/bin/pcloud-teardown; do
     if [ -f "$f" ]; then
         cp "$f" "$REPO_DIR/${f#/}"
