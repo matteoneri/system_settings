@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+#
+# datasave-status — polybar data-saving-mode indicator, and the mode's state reader.
+#
+#   (no arg) | status   Print the indicator: a cloud glyph normally, a
+#                       struck-through cloud while data saving is on.
+#   is-on               Exit 0 when the mode is on, non-zero otherwise.
+#   stopped <name>      Exit 0 when <name> was stopped by this mode.
+#   record <name>       Turn the mode on and record <name> as stopped by it.
+#   clear               Turn the mode off, discarding the record.
+#
+# This script owns the state file and its format. Every other consumer asks this
+# script rather than reading the file, so the format stays private to it and to
+# datasave-toggle, and the consumers cannot drift as it changes.
+#
+# Used by ~/.config/polybar/config.ini [module/datasave],
+# ~/.config/i3/scripts/datasave-toggle, eth_price, gcal-next, and
+# /etc/NetworkManager/dispatcher.d/90-datasave-metered.
+
+GLYPH_ON="${DATASAVE_GLYPH_ON:-󰅤}"    # nf-md-cloud_off_outline — shown while the mode is on
+GLYPH_OFF="${DATASAVE_GLYPH_OFF:-󰅣}"  # nf-md-cloud_outline — shown while normal
+
+# The runtime directory rather than /tmp: logind removes it at logout, which is
+# what makes the mode session-scoped. /tmp survives until reboot, so a mode left
+# on would still read as on at the next login.
+STATE_FILE="${DATASAVE_STATE:-${XDG_RUNTIME_DIR:-/tmp}/datasave-state}"
+
+# render <on|off>  ->  indicator string
+render() {
+    case "$1" in
+        on) printf '%s' "$GLYPH_ON" ;;
+        *)  printf '%s' "$GLYPH_OFF" ;;
+    esac
+}
+
+# File presence is the mode; each line names a consumer this mode actually stopped.
+is_on() { [ -f "$STATE_FILE" ]; }
+
+print_status() {
+    if is_on; then
+        printf '%s\n' "$(render on)"
+    else
+        printf '%s\n' "$(render off)"
+    fi
+}
+
+stopped() {
+    local name="${1:-}"
+    [ -n "$name" ] || return 1
+    is_on || return 1
+    grep -qxF -- "$name" "$STATE_FILE" 2>/dev/null
+}
+
+record() {
+    local name="${1:-}"
+    [ -n "$name" ] || return 1
+    touch "$STATE_FILE" || return 1
+    grep -qxF -- "$name" "$STATE_FILE" 2>/dev/null || printf '%s\n' "$name" >> "$STATE_FILE"
+}
+
+clear_state() { rm -f "$STATE_FILE"; }
+
+main() {
+    set -uo pipefail
+    case "${1:-status}" in
+        status)  print_status ;;
+        is-on)   is_on ;;
+        stopped) stopped "${2:-}" ;;
+        record)  record "${2:-}" ;;
+        clear)   clear_state ;;
+        *)
+            printf 'usage: %s [status|is-on|stopped <name>|record <name>|clear]\n' "${0##*/}" >&2
+            exit 2
+            ;;
+    esac
+}
+
+if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
+    main "$@"
+fi
