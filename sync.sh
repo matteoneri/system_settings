@@ -112,6 +112,11 @@ for f in /etc/systemd/system/pcloud-suspend.service \
          /usr/local/bin/pcloud-teardown; do
     if [ -f "$f" ]; then
         cp "$f" "$REPO_DIR/${f#/}"
+    elif [ ! -r "$(dirname "$f")" ]; then
+        # /etc/polkit-1/rules.d is drwxr-x--- root:polkitd, so `[ -f ]` is false
+        # for a file that is installed and correct. Reporting that as "absent"
+        # would claim the polkit rule is missing when it is not.
+        echo "  skip (unreadable, needs root): $f"
     else
         echo "  skip (absent): $f"
     fi

@@ -27,6 +27,13 @@ ExecCondition=/usr/bin/systemctl is-active --quiet user@1000.service
 # unit's cgroup, so restart would start a second one beside it, not replace it.
 # Leading '-': a user-side failure (AppImage gone, launcher unreadable) belongs
 # on the user's own pcloud.service, not as a permanently degraded system unit.
+# Do not relaunch pCloud while data saving mode is on. Without this, the mode's
+# headline consumer silently returns on the first resume -- and a lid close is
+# the most likely next action on the tethered/metered trips the mode is for --
+# while the indicator still reads on and the record still says pCloud is stopped.
+# The uid and path are hardcoded like the rest of this unit (user@1000.service,
+# matteo@.host); datasave-status owns this path.
+ExecCondition=/usr/bin/test ! -f /run/user/1000/datasave-state
 ExecStart=-/usr/bin/systemctl --user --machine=matteo@.host restart pcloud.service
 # Type=oneshot disables the start timeout by default (TimeoutStartUSec=infinity).
 # This call blocks on a socket the user session owns, so without a bound a wedged

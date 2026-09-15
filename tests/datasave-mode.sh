@@ -161,6 +161,8 @@ if load_toggle broken; then
     assert_true  "the mode still turns on"                 bash "$STATUS" is-on
     assert_false "a consumer that failed is not recorded"  bash "$STATUS" stopped fake
     [[ -s "$NOTIFY_LOG" ]] && pass "a partial failure still notifies" || fail "a partial failure sent no notification"
+else
+    fail "could not source $TOGGLE to reach its functions"
 fi
 
 echo "== disabling restores only what this mode stopped =="
@@ -172,6 +174,8 @@ if load_toggle ok; then
     [[ "$STARTED" == "1" ]] && pass "a recorded consumer is restored" || fail "a recorded consumer was not restored"
     assert_false "disabling turns the mode off" bash "$STATUS" is-on
     [[ -e "$DATASAVE_STATE" ]] && fail "disabling left the state file behind" || pass "disabling removed the state file"
+else
+    fail "could not source $TOGGLE to reach its functions"
 fi
 
 echo "== a consumer stopped by hand beforehand is left alone =="
@@ -183,6 +187,8 @@ if load_toggle broken; then
     STARTED=0
     disable_mode >/dev/null 2>&1
     [[ "$STARTED" == "0" ]] && pass "an unrecorded consumer is not started" || fail "disabling started a consumer it never stopped"
+else
+    fail "could not source $TOGGLE to reach its functions"
 fi
 
 echo "== sourcing the toggle has no side effects =="
@@ -216,9 +222,12 @@ bash "$STATUS" on >/dev/null 2>&1
 : > "$CURL_LOG"
 printf '%s\n' "CACHED-ETH" > "$SCRATCH/eth-cache"
 out="$(PATH="$STUBBIN:$PATH" ETH_PRICE_CACHE="$SCRATCH/eth-cache" bash "$ETH" 2>/dev/null)"
-[[ "$out" == "CACHED-ETH" ]] \
+[[ "$out" == CACHED-ETH* ]] \
     && pass "eth_price serves its cached value while the mode is on" \
     || fail "eth_price printed '$out' instead of the cached value"
+[[ "$out" != "CACHED-ETH" ]] \
+    && pass "the cached price is marked, not passed off as live" \
+    || fail "a frozen price renders identically to a live one"
 [[ -s "$CURL_LOG" ]] \
     && fail "eth_price made a network call while the mode is on" \
     || pass "eth_price made no network call while the mode is on"
@@ -316,9 +325,11 @@ chmod +x "$STUBBIN/stub-nmcli" "$STUBBIN/stub-systemd-run"
 # run_dispatch <action> <metered> <connection-id>
 run_dispatch() {
     : > "$NOTIFY_ARGS"; : > "$NMCLI_LOG"
+    rm -f "$SCRATCH/offer.stamp"
     env NMCLI="$STUBBIN/stub-nmcli" SYSTEMD_RUN="$STUBBIN/stub-systemd-run" \
         STUB_METERED="$2" CONNECTION_UUID="11111111-2222-3333-4444-555555555555" \
         CONNECTION_ID="$3" NMCLI_LOG="$NMCLI_LOG" NOTIFY_ARGS="$NOTIFY_ARGS" \
+        DATASAVE_STATE_DIR="$SCRATCH/nmstate" DATASAVE_OFFER_STAMP="$SCRATCH/offer.stamp" \
         bash "$DISPATCH" wlan0 "$1" >/dev/null 2>&1
 }
 
@@ -336,6 +347,26 @@ run_dispatch up unknown "HomeWifi"
 run_dispatch down yes "HomeWifi"
 [[ -s "$NOTIFY_ARGS" ]] && fail "a non-up action offered the mode" || pass "only the up action offers the mode"
 
+echo "== the offer is suppressed when it would be wrong or repetitive =="
+mkdir -p "$SCRATCH/nmstate"
+: > "$SCRATCH/nmstate/datasave-state"
+run_dispatch up yes "HomeWifi"
+[[ -s "$NOTIFY_ARGS" ]] \
+    && fail "offered the mode while it was already on (the key would turn it OFF)" \
+    || pass "no offer while the mode is already on"
+rm -f "$SCRATCH/nmstate/datasave-state"
+
+run_dispatch up yes "HomeWifi"   # clears the stamp, then offers
+: > "$NOTIFY_ARGS"
+env NMCLI="$STUBBIN/stub-nmcli" SYSTEMD_RUN="$STUBBIN/stub-systemd-run" \
+    STUB_METERED=yes CONNECTION_UUID="11111111-2222-3333-4444-555555555555" \
+    NMCLI_LOG="$NMCLI_LOG" NOTIFY_ARGS="$NOTIFY_ARGS" \
+    DATASAVE_STATE_DIR="$SCRATCH/nmstate" DATASAVE_OFFER_STAMP="$SCRATCH/offer.stamp" \
+    bash "$DISPATCH" wlan0 up >/dev/null 2>&1
+[[ -s "$NOTIFY_ARGS" ]] \
+    && fail "a reconnect produced a second popup; a flapping hotspot would be unbounded" \
+    || pass "a reconnect within the cooldown does not re-offer"
+
 echo "== the dispatcher does not trust the connection name =="
 run_dispatch up yes "HomeWifi"
 benign="$(cat "$NOTIFY_ARGS")"
@@ -350,6 +381,141 @@ grep -q "uuid" "$NMCLI_LOG" \
 grep -q "evil" "$NMCLI_LOG" \
     && fail "the attacker-chosen connection name reached the nmcli call" \
     || pass "the connection name never reaches the nmcli call"
+
+echo "== a stop that cannot be recorded counts as a failure =="
+# Otherwise the consumer is left stopped with nothing able to restore it.
+state_off
+cat > "$STUBBIN/stub-status" <<'STUB'
+#!/bin/bash
+# Succeeds for everything except `record`, which is the failure under test.
+[[ "$1" == "record" ]] && exit 1
+exec "$REAL_STATUS" "$@"
+STUB
+chmod +x "$STUBBIN/stub-status"
+export REAL_STATUS="$STATUS"
+: > "$NOTIFY_LOG"
+(
+    DATASAVE_STATUS="$STUBBIN/stub-status"
+    CONSUMERS="fake"
+    NOTIFY_SEND="$SCRATCH/stub-notify"
+    export DATASAVE_STATUS CONSUMERS NOTIFY_SEND
+    # shellcheck disable=SC1090
+    source "$TOGGLE" >/dev/null 2>&1
+    ds_stop_fake() { return 0; }
+    enable_mode >/dev/null 2>&1
+)
+grep -q "unchanged" "$NOTIFY_LOG" \
+    && pass "a stop that could not be recorded is reported, not silently lost" \
+    || fail "a failed record was not counted: the consumer is stopped with nothing to restore it"
+bash "$STATUS" clear >/dev/null 2>&1
+
+# ---------------------------------------------------------------------------
+# The REAL consumer functions, with every external command stubbed. None of this
+# needs a live service: systemctl, pgrep, pkill, i3-msg and kitty are all
+# overridable, so the guards that decide whether a destructive action runs are
+# exercised rather than substituted away.
+# ---------------------------------------------------------------------------
+
+export STUB_LOG="$SCRATCH/consumer.log"
+
+make_stub() {  # make_stub <name> <exit-code> [stdout]
+    cat > "$STUBBIN/$1" <<STUB
+#!/bin/bash
+printf '%s %s\\n' "$1" "\$*" >> "\$STUB_LOG"
+${3:+printf '%s\\n' '$3'}
+exit ${2:-0}
+STUB
+    chmod +x "$STUBBIN/$1"
+}
+
+# Loads the toggle with the REAL consumer list and every external tool stubbed.
+load_real() {
+    CONSUMERS="pcloud keyring newsboat"
+    SYSTEMCTL="$STUBBIN/systemctl"; PGREP="$STUBBIN/pgrep"; PKILL="$STUBBIN/pkill"
+    I3MSG="$STUBBIN/i3-msg"; KITTY="$STUBBIN/kitty"; NOTIFY_SEND="$SCRATCH/stub-notify"
+    export CONSUMERS SYSTEMCTL PGREP PKILL I3MSG KITTY NOTIFY_SEND
+    # shellcheck disable=SC1090
+    source "$TOGGLE" >/dev/null 2>&1
+}
+
+echo "== pCloud is never torn down with nothing to tear down =="
+: > "$STUB_LOG"
+make_stub systemctl 0; make_stub pgrep 1; make_stub pkill 0; make_stub i3-msg 0; make_stub kitty 0
+( load_real; ds_stop_pcloud ) >/dev/null 2>&1 \
+    && fail "the stop reported success with pCloud not running" \
+    || pass "a stopped pCloud is not torn down again"
+grep -q "systemctl .*pcloud-datasave" "$STUB_LOG" \
+    && fail "the root teardown unit was started with nothing to tear down" \
+    || pass "the root teardown unit was not started"
+
+echo "== pCloud is not torn down while running but unmounted =="
+: > "$STUB_LOG"
+make_stub pgrep 0
+( load_real; pcloud_mounted() { return 1; }; ds_stop_pcloud ) >/dev/null 2>&1
+grep -q "systemctl .*pcloud-datasave" "$STUB_LOG" \
+    && fail "the teardown ran against an unmounted pCloud (its dangerous branch)" \
+    || pass "an unmounted pCloud is left alone"
+
+echo "== the keyring stop verifies, and never prompts =="
+: > "$STUB_LOG"
+make_stub systemctl 0
+( load_real; ds_stop_keyring ) >/dev/null 2>&1
+grep -q -- "--no-ask-password stop archlinux-keyring-wkd-sync.timer" "$STUB_LOG" \
+    && pass "the timer stop passes --no-ask-password" \
+    || fail "the timer stop could raise a password dialog"
+: > "$STUB_LOG"
+make_stub systemctl 1
+( load_real; ds_start_keyring ) >/dev/null 2>&1 \
+    && fail "a keyring restart that never activated reported success" \
+    || pass "the keyring restart is verified, not assumed"
+
+echo "== newsboat is only quit when every window is parked and it is alone =="
+: > "$STUB_LOG"
+make_stub pgrep 0; make_stub pkill 0
+( load_real; newsboat_all_hidden() { return 1; }; ds_stop_newsboat ) >/dev/null 2>&1
+grep -q "pkill" "$STUB_LOG" \
+    && fail "a visible newsboat was signalled" \
+    || pass "a newsboat that is not fully parked is left alone"
+: > "$STUB_LOG"
+cat > "$STUBBIN/pgrep" <<'STUB'
+#!/bin/bash
+printf 'pgrep %s
+' "$*" >> "$STUB_LOG"
+# -c -x newsboat reports two running processes: one is not the parked one.
+[[ "$*" == *-c* ]] && { echo 2; exit 0; }
+exit 0
+STUB
+chmod +x "$STUBBIN/pgrep"
+( load_real; newsboat_all_hidden() { return 0; }; ds_stop_newsboat ) >/dev/null 2>&1
+grep -q "pkill" "$STUB_LOG" \
+    && fail "newsboat was signalled while a second one was running elsewhere" \
+    || pass "an ambiguous newsboat is left alone"
+
+echo "== a restore never doubles a running consumer =="
+: > "$STUB_LOG"
+make_stub pgrep 0
+( load_real; ds_start_pcloud ) >/dev/null 2>&1
+grep -q "systemctl --user restart" "$STUB_LOG" \
+    && fail "pCloud was restarted beside a running instance" \
+    || pass "a running pCloud is not restarted"
+
+echo "== newsboat-launch applies the override only while the mode is on =="
+LAUNCH="$REPO_ROOT/home/.config/i3/scripts/newsboat-launch"
+: > "$STUB_LOG"
+make_stub newsboat 0
+state_off
+PATH="$STUBBIN:$PATH" DATASAVE_STATUS="$STATUS" bash "$LAUNCH" >/dev/null 2>&1
+grep -q -- "-C" "$STUB_LOG" \
+    && fail "the override config was used while the mode is off" \
+    || pass "no override while the mode is off"
+: > "$STUB_LOG"
+bash "$STATUS" on >/dev/null 2>&1
+PATH="$STUBBIN:$PATH" DATASAVE_STATUS="$STATUS" NEWSBOAT_DATASAVE_CONFIG="$SCRATCH/override.conf" \
+    bash -c 'printf "auto-reload no\n" > "$1"; exec bash "$2"' _ "$SCRATCH/override.conf" "$LAUNCH" >/dev/null 2>&1
+grep -q -- "-C" "$STUB_LOG" \
+    && pass "the override config is used while the mode is on" \
+    || fail "the mode did not reach newsboat's launch"
+bash "$STATUS" clear >/dev/null 2>&1
 
 echo "== the tracked copies match the installed ones =="
 # sync.sh copies live -> repo, so a live edit that was never synced would leave

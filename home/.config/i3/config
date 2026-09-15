@@ -217,6 +217,12 @@ exec --no-startup-id kitty --class dropdown-terminal
 for_window [class="dropdown-terminal"] move scratchpad
 bindsym $mod+y exec --no-startup-id ~/.config/i3/scripts/dropdown-toggle dropdown-terminal
 
+# Data saving mode is session-scoped, but its state lives in the runtime
+# directory, which logind removes at logout -- so a mode left on loses its record
+# while the keyring timer stays stopped. This sweep restores the timer and clears
+# stale state at login. Starting an already-running timer is a no-op.
+exec --no-startup-id ~/.config/i3/scripts/datasave-toggle reconcile
+
 # drop-down newsboat
 exec --no-startup-id kitty --class dropdown-newsboat -e ~/.config/i3/scripts/newsboat-launch
 for_window [class="dropdown-newsboat"] move scratchpad
@@ -323,11 +329,6 @@ exec --no-startup-id ~/.config/i3/scripts/resume-refresh
 exec --no-startup-id ~/.config/i3/scripts/session-snapshot
 exec --no-startup-id ~/.config/i3/scripts/session-restore
 
-# Data saving mode is session-scoped, but its state lives in the runtime
-# directory, which logind removes at logout -- so a mode left on loses its record
-# while the keyring timer stays stopped. This sweep restores the timer and clears
-# stale state at login. Starting an already-running timer is a no-op.
-exec --no-startup-id ~/.config/i3/scripts/datasave-toggle reconcile
 
 ##################
 # floating rules #

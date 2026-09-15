@@ -20,7 +20,16 @@ polkit.addRule(function (action, subject) {
     if (action.id !== "org.freedesktop.systemd1.manage-units") {
         return polkit.Result.NOT_HANDLED;
     }
-    if (subject.user !== "matteo") {
+    /* Scoped to an active local session: the default policy is auth_admin_keep
+     * for active sessions and auth_admin otherwise, and this grant should not be
+     * wider than the default it replaces. */
+    if (subject.user !== "matteo" || !subject.local || !subject.active) {
+        return polkit.Result.NOT_HANDLED;
+    }
+    /* And to the two verbs the toggle actually issues, so the grant does not
+     * also cover kill, freeze, or set-property on these units. */
+    var verb = action.lookup("verb");
+    if (verb !== "start" && verb !== "stop") {
         return polkit.Result.NOT_HANDLED;
     }
     var unit = action.lookup("unit");

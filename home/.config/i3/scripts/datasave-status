@@ -24,7 +24,18 @@ GLYPH_OFF="${DATASAVE_GLYPH_OFF:-󰅣}"  # nf-md-cloud_outline — shown while n
 # The runtime directory rather than /tmp: logind removes it at logout, which is
 # what makes the mode session-scoped. /tmp survives until reboot, so a mode left
 # on would still read as on at the next login.
-STATE_FILE="${DATASAVE_STATE:-${XDG_RUNTIME_DIR:-/tmp}/datasave-state}"
+# Never a bare /tmp fallback: file presence *is* the mode, so any uid that can
+# create that path could force the mode on, and record's append follows a planted
+# symlink. With no runtime directory, use a 0700 uid-scoped directory instead.
+if [ -n "${DATASAVE_STATE:-}" ]; then
+    STATE_FILE="$DATASAVE_STATE"
+elif [ -n "${XDG_RUNTIME_DIR:-}" ]; then
+    STATE_FILE="$XDG_RUNTIME_DIR/datasave-state"
+else
+    _ds_dir="${TMPDIR:-/tmp}/datasave-$(id -u)"
+    mkdir -m 0700 -p "$_ds_dir" 2>/dev/null
+    STATE_FILE="$_ds_dir/datasave-state"
+fi
 
 # render <on|off>  ->  indicator string
 render() {
@@ -38,11 +49,11 @@ render() {
 is_on() { [ -f "$STATE_FILE" ]; }
 
 print_status() {
-    if is_on; then
-        printf '%s\n' "$(render on)"
-    else
-        printf '%s\n' "$(render off)"
-    fi
+    # render is called directly rather than through $( ): polybar re-execs this
+    # script every few seconds forever, and command substitution would fork a
+    # subshell per tick to print one of two static glyphs.
+    if is_on; then render on; else render off; fi
+    printf '\n'
 }
 
 stopped() {

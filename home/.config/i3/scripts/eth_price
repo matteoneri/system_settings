@@ -4,20 +4,32 @@
 # caching the rendered line so data saving mode can serve the last value instead
 # of fetching every 60s.
 #
-# The cache lives in the runtime directory, not /tmp: polybar interprets click
-# tags in a module's output, so the file this script prints verbatim should not
-# sit in a world-writable directory.
+# The cache never lands in a shared directory. polybar parses click-action tags
+# in a module's output and this script prints the cached file verbatim, so a file
+# another uid could pre-create or symlink would be both a command-injection and a
+# file-clobbering vector. With no runtime directory, use a 0700 uid-scoped one.
 
 DATASAVE_STATUS="${DATASAVE_STATUS:-$HOME/.config/i3/scripts/datasave-status}"
-CACHE_FILE="${ETH_PRICE_CACHE:-${XDG_RUNTIME_DIR:-/tmp}/polybar-eth-price-cache}"
+if [ -n "${ETH_PRICE_CACHE:-}" ]; then
+    CACHE_FILE="$ETH_PRICE_CACHE"
+elif [ -n "${XDG_RUNTIME_DIR:-}" ]; then
+    CACHE_FILE="$XDG_RUNTIME_DIR/polybar-eth-price-cache"
+else
+    _eth_dir="${TMPDIR:-/tmp}/polybar-$(id -u)"
+    mkdir -m 0700 -p "$_eth_dir" 2>/dev/null
+    CACHE_FILE="$_eth_dir/eth-price-cache"
+fi
 PLACEHOLDER=$'\ued58 --'
+# Shown beside a cached price so a days-old quote is never indistinguishable from
+# a live one -- the same reason gcal-next refuses to show yesterday's schedule.
+STALE_MARK=$'\U000f0164'  # nf-md-cloud_off_outline, matching the mode indicator
 
 # Data saving mode: serve the last rendered value and make no network call. With
 # no cache yet, fall back to the same placeholder a failed fetch prints, so the
 # module keeps rendering rather than vanishing from the bar.
 if "$DATASAVE_STATUS" is-on 2>/dev/null; then
     if [ -s "$CACHE_FILE" ]; then
-        cat "$CACHE_FILE"
+        printf '%s %s\n' "$(cat "$CACHE_FILE")" "$STALE_MARK"
     else
         echo "$PLACEHOLDER"
     fi

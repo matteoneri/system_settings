@@ -43,12 +43,33 @@ metered="$("$NMCLI" -g connection.metered connection show uuid "$CONNECTION_UUID
 # which is wrong on ordinary wifi and is not what this keys on.
 [ "$metered" = "yes" ] || exit 0
 
+# Already on: offering again would tell the user to press the key that turns the
+# protection OFF -- and a hotspot reconnects constantly, which is exactly when
+# this fires. datasave-status owns this path; the dispatcher runs as root before
+# any user environment exists, so it tests the file rather than calling the
+# script.
+STATE_DIR="${DATASAVE_STATE_DIR:-/run/user/$(id -u "$DESKTOP_USER" 2>/dev/null || echo 0)}"
+[ -f "$STATE_DIR/datasave-state" ] && exit 0
+
+# Cool-down. NetworkManager re-emits `up` on every reconnect and roam, so a
+# flapping access point would otherwise produce an unbounded series of
+# root-originated popups asking for the same security downgrade.
+STAMP="${DATASAVE_OFFER_STAMP:-$STATE_DIR/datasave-offer.stamp}"
+now="$(date +%s)"
+last="$(cat "$STAMP" 2>/dev/null || echo 0)"
+case "$last" in ''|*[!0-9]*) last=0 ;; esac
+[ "$((now - last))" -lt 1800 ] && exit 0
+# Subshell: the redirection itself can fail (no session directory), and the
+# shell reports that on its own stderr before printf ever runs.
+( printf '%s\n' "$now" > "$STAMP" ) 2>/dev/null || true
+
 # Drop privilege before touching the session. The dispatcher environment carries
 # no DBUS_SESSION_BUS_ADDRESS, DISPLAY or XDG_RUNTIME_DIR, so a bare root
 # notify-send would exit non-zero and show nothing. Failure is tolerated: a
 # connection can come up at the greeter with no session to notify.
 "$SYSTEMD_RUN" --user --machine="${DESKTOP_USER}@.host" --collect --quiet \
     /usr/bin/notify-send -u normal -a "Data Saving" \
+    -h "string:x-canonical-private-synchronous:datasave-metered" \
     "Metered connection" \
     "Press Super+Shift+Z to stop background data use." \
     >/dev/null 2>&1 || true

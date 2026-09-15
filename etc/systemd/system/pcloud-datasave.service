@@ -1,6 +1,5 @@
 [Unit]
 Description=Stop pCloud and release its FUSE mount for data saving mode
-Documentation=file:///home/matteo/Documents/Projects/system_settings/docs/datasave-mode.md
 # Runs the same teardown as the sleep path, for a different reason: data saving
 # mode stops pCloud on demand rather than before a freeze. It exists because the
 # teardown needs privileges the desktop user does not have -- pcloud-teardown
@@ -15,6 +14,14 @@ Documentation=file:///home/matteo/Documents/Projects/system_settings/docs/datasa
 
 [Service]
 Type=oneshot
+# The precondition lives here, not only in the caller. The polkit rule lets
+# anything running as the desktop user start this unit, so a guard that exists
+# only in datasave-toggle is not a guard: the privileged action would be
+# directly reachable without it. Fired with nothing to tear down, pcloud-teardown
+# takes its no-mount branch and can abort an unrelated FUSE connection, which
+# returns EIO on it silently for the rest of the session.
+# ExecCondition exit statuses 1-254 skip the unit cleanly rather than failing it.
+ExecCondition=/usr/bin/bash -c 'pgrep -x pcloud.bin >/dev/null || pgrep -x pCloud.AppImage >/dev/null'
 ExecStart=/usr/local/bin/pcloud-teardown
 # Same reasoning as pcloud-suspend.service: pcloud-teardown allows pCloud 5s to
 # exit cleanly before killing it, and both timeouts bound the run and its kill

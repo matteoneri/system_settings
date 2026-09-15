@@ -4,8 +4,10 @@
 #
 #   (no arg) | toggle   Flip the mode.
 #   on | off            Force a direction.
-#   reconcile           Login sweep: restore anything a previous session left
-#                       stopped, then clear stale state.
+#   reconcile           Login sweep: restart the one consumer that stays stopped
+#                       across logout (the keyring timer), then clear stale
+#                       state. pCloud and newsboat both come back on their own
+#                       through the normal login sequence.
 #
 # Enabling stops each consumer in the inventory and records only the ones it
 # actually stopped; disabling restores only those. Consumers are independent and
@@ -16,7 +18,7 @@
 # Every system-unit call passes --no-ask-password. Managing system units is
 # auth_admin_keep on this machine, so without it an unauthorized call would raise
 # a modal password dialog instead of failing soft. With
-# /etc/polkit-1/rules.d/49-datasave-units.rules installed those two units are
+# /etc/polkit-1/rules.d/49-datasave-units.rules installed those units are
 # permitted and the calls succeed silently.
 #
 # Used by $mod+Shift+z in ~/.config/i3/config and by
@@ -26,6 +28,9 @@ STATUS="${DATASAVE_STATUS:-$HOME/.config/i3/scripts/datasave-status}"
 SYSTEMCTL="${SYSTEMCTL:-systemctl}"
 NOTIFY_SEND="${NOTIFY_SEND:-notify-send}"
 I3MSG="${I3MSG:-i3-msg}"
+PKILL="${PKILL:-pkill}"
+PGREP="${PGREP:-pgrep}"
+KITTY="${KITTY:-kitty}"
 
 # Overridable so the test suite can substitute fakes and never touch a service.
 CONSUMERS="${CONSUMERS:-pcloud keyring newsboat}"
@@ -38,22 +43,36 @@ NEWSBOAT_CLASS="dropdown-newsboat"
 # so the unit reports inactive while pCloud is running. The probe must therefore
 # be the same process pair usr/local/bin/pcloud-teardown targets.
 pcloud_running() {
-    pgrep -x pcloud.bin >/dev/null 2>&1 || pgrep -x pCloud.AppImage >/dev/null 2>&1
+    "$PGREP" -x pcloud.bin >/dev/null 2>&1 || "$PGREP" -x pCloud.AppImage >/dev/null 2>&1
+}
+
+# The teardown selects what to abort by the MOUNT, not the process, so the
+# precondition has to match: a pCloud that is running but not mounted -- during
+# its startup window, or when it cannot reach the server, which is the
+# captive-portal case this mode exists for -- would otherwise pass a
+# process-only guard and land in exactly the no-mount branch we must avoid.
+pcloud_mounted() {
+    awk -v m="$HOME/pCloudDrive" '$5 == m { found = 1 } END { exit !found }' \
+        /proc/self/mountinfo 2>/dev/null
 }
 
 ds_stop_pcloud() {
     # Never fire the root teardown with nothing to tear down: its no-mount branch
     # reaches for other FUSE connections, and a wrong abort returns EIO on that
-    # connection silently for the rest of the session.
+    # connection silently for the rest of the session. The unit carries the same
+    # precondition, because the polkit rule lets anything running as this user
+    # start it -- a guard that lives only in the caller is not a guard.
     pcloud_running || return 1
+    pcloud_mounted || return 1
     "$SYSTEMCTL" --no-ask-password start pcloud-datasave.service >/dev/null 2>&1
     ! pcloud_running
 }
 
 ds_start_pcloud() {
-    # Through the user unit, never a bare relaunch: that would create an instance
-    # outside systemd's cgroup. restart also starts it from failed, which the
-    # teardown's SIGKILL fallback can produce.
+    # Symmetric with the stop: a pCloud started by dex lives in the session
+    # scope, not this unit's cgroup, so restarting beside a running instance
+    # would leave two of them contending for one FUSE mountpoint.
+    pcloud_running && return 0
     "$SYSTEMCTL" --user restart pcloud.service >/dev/null 2>&1
 }
 
@@ -66,82 +85,161 @@ ds_stop_keyring() {
 
 ds_start_keyring() {
     "$SYSTEMCTL" --no-ask-password start "$KEYRING_UNIT" >/dev/null 2>&1
+    # Verify rather than trust the exit status: this timer is a security control,
+    # and a denied call must not read as a successful restore.
+    "$SYSTEMCTL" is-active --quiet "$KEYRING_UNIT" 2>/dev/null
 }
 
 # --- newsboat ----------------------------------------------------------------
 # newsboat is launched once at login and parked in the scratchpad, so its
 # auto-reload keeps fetching in the background. A visible newsboat is one the
 # user is reading, and nothing actively driven may be disturbed.
-newsboat_running() { pgrep -x newsboat >/dev/null 2>&1; }
+newsboat_running() { "$PGREP" -x newsboat >/dev/null 2>&1; }
 
-newsboat_hidden() {
+# True only when EVERY window of this class is parked in the scratchpad. The
+# check must cover all of them, because the stop below signals the process by
+# name: judging on "at least one is hidden" and then acting globally would close
+# a newsboat the user is reading the moment a second one happens to be parked.
+newsboat_all_hidden() {
     "$I3MSG" -t get_tree 2>/dev/null | jq -e --arg c "$NEWSBOAT_CLASS" '
-        [ .. | objects | select(.name? == "__i3_scratch")
-          | .. | objects | select(.window_properties?.class? == $c) ] | length > 0
+        [ .. | objects | select(.window_properties?.class? == $c) ] as $all
+        | [ .. | objects | select(.name? == "__i3_scratch")
+            | .. | objects | select(.window_properties?.class? == $c) ] as $parked
+        | ($all | length) > 0 and ($all | length) == ($parked | length)
     ' >/dev/null 2>&1
 }
 
 ds_stop_newsboat() {
     newsboat_running || return 1
-    newsboat_hidden || return 1
-    "$I3MSG" "[class=\"$NEWSBOAT_CLASS\"] kill" >/dev/null 2>&1
-    sleep 0.3
+    newsboat_all_hidden || return 1
+    # Signalling by name reaches every newsboat, including one running in an
+    # ordinary terminal that i3 knows nothing about. Act only when the single
+    # running process is the parked one; anything ambiguous is left alone and
+    # recorded as not stopped.
+    [ "$("$PGREP" -c -x newsboat 2>/dev/null || echo 0)" = "1" ] || return 1
+    # SIGTERM to newsboat itself, not an i3 `kill` of its window. i3 kill sends
+    # WM_DELETE_WINDOW, and kitty's confirm_os_window_close defaults to
+    # (-1, False): a `kitty -e newsboat` window has no shell prompt marks, so
+    # kitty counts it as running a program and paints a close-confirmation
+    # prompt -- inside the hidden scratchpad window -- instead of closing. The
+    # stop would never succeed, and the next dropdown open would show that
+    # prompt rather than the reader.
+    "$PKILL" -x -TERM newsboat >/dev/null 2>&1
+    # Poll rather than wait a fixed interval: newsboat commits its cache and
+    # prunes 33 feeds on exit, which can outlast any constant we would pick, and
+    # a premature verdict would leave it stopped but unrecorded.
+    local i
+    for i in $(seq 1 30); do
+        newsboat_running || return 0
+        sleep 0.1
+    done
     ! newsboat_running
 }
 
 ds_start_newsboat() {
+    # A newsboat the user reopened during the mode needs no restore.
+    newsboat_running && return 0
     # The for_window rule in ~/.config/i3/config returns it to the scratchpad.
-    kitty --class "$NEWSBOAT_CLASS" -e "$HOME/.config/i3/scripts/newsboat-launch" >/dev/null 2>&1 &
-    disown
+    "$KITTY" --class "$NEWSBOAT_CLASS" -e "$HOME/.config/i3/scripts/newsboat-launch" \
+        >/dev/null 2>&1 &
+    local pid=$!
+    disown 2>/dev/null || true
+    # Report the spawn, not disown's status, or a kitty that failed to launch
+    # would count as a successful restore.
+    kill -0 "$pid" 2>/dev/null
 }
 
 # --- mode transitions --------------------------------------------------------
+# $1 = on|off, $2 = consumers left unchanged, $3 = consumers stopped but not
+# recorded. The third is the dangerous one, so it gets its own clause and a
+# higher urgency: nothing can restore those automatically.
 notify_state() {
-    local state="$1" failed="${2:-0}" msg
+    local state="$1" failed="${2:-0}" lost="${3:-0}" msg urgency=low
     if [ "$state" = "on" ]; then
         msg="ON — background sync and unattended fetches stopped"
     else
         msg="OFF — background work resumed"
     fi
     [ "$failed" -gt 0 ] 2>/dev/null && msg="$msg ($failed left unchanged)"
-    "$NOTIFY_SEND" -u low "Data Saving" "$msg" >/dev/null 2>&1 || true
+    if [ "$lost" -gt 0 ] 2>/dev/null; then
+        msg="$msg — $lost stopped but NOT recorded; restart by hand"
+        urgency=critical
+    fi
+    "$NOTIFY_SEND" -u "$urgency" "Data Saving" "$msg" >/dev/null 2>&1 || true
 }
 
 enable_mode() {
-    local name failed=0
-    "$STATUS" on || return 1
+    local name failed=0 lost=0
+    if ! "$STATUS" on; then
+        "$NOTIFY_SEND" -u critical "Data Saving" \
+            "Could not enable: the state file is not writable" >/dev/null 2>&1 || true
+        return 1
+    fi
     for name in $CONSUMERS; do
         declare -F "ds_stop_$name" >/dev/null 2>&1 || continue
-        if "ds_stop_$name"; then
-            "$STATUS" record "$name"
-        else
+        if ! "ds_stop_$name"; then
             failed=$((failed + 1))
+            continue
+        fi
+        "$STATUS" record "$name" && continue
+        # Stopped but unrecordable: nothing would ever restore it. Undo, so the
+        # failure lands in the recoverable direction.
+        if declare -F "ds_start_$name" >/dev/null 2>&1 && "ds_start_$name"; then
+            failed=$((failed + 1))
+        else
+            lost=$((lost + 1))
         fi
     done
-    notify_state on "$failed"
+    notify_state on "$failed" "$lost"
 }
 
 disable_mode() {
-    local name failed=0
+    local name failed=0 restore=""
     for name in $CONSUMERS; do
-        "$STATUS" stopped "$name" || continue
-        declare -F "ds_start_$name" >/dev/null 2>&1 || continue
-        "ds_start_$name" || failed=$((failed + 1))
+        "$STATUS" stopped "$name" && restore="$restore $name"
     done
+    # Clear before restoring, not after: a restarted consumer re-reads the mode
+    # at startup, and newsboat would otherwise come back under the data-saving
+    # override with auto-reload off for the rest of the session. It also means an
+    # interrupt fails toward "mode off, something still stopped", which a second
+    # toggle repairs, rather than "mode on, everything already running".
     "$STATUS" clear
+    for name in $restore; do
+        declare -F "ds_start_$name" >/dev/null 2>&1 || continue
+        "ds_start_$name" && continue
+        failed=$((failed + 1))
+        # Keep the record, so the next toggle retries rather than losing the
+        # fact that this consumer is still stopped.
+        "$STATUS" record "$name"
+    done
     notify_state off "$failed"
 }
 
 # Run at login. The runtime directory goes away at logout, so a mode left on
 # loses its record while the keyring timer stays stopped and nothing else would
-# ever restore it. Starting an already-running timer is a no-op.
+# ever restore it -- which is why this cannot be conditioned on the record: by
+# the time it runs, there is none. Accepted cost: a timer the user stopped by
+# hand and left stopped across a logout is started again here. Narrow, because
+# the unit is static and WantedBy=timers.target, so a reboot re-arms it anyway,
+# and a deliberate `mask` survives this (the start then fails cleanly).
 reconcile_session() {
-    "$SYSTEMCTL" --no-ask-password start "$KEYRING_UNIT" >/dev/null 2>&1 || true
+    ds_start_keyring || "$NOTIFY_SEND" -u normal "Data Saving" \
+        "Could not restart $KEYRING_UNIT — run: systemctl start $KEYRING_UNIT" \
+        >/dev/null 2>&1 || true
     "$STATUS" clear
 }
 
 main() {
     set -uo pipefail
+    # One non-blocking lock. Unlike the repo's other toggles this one holds a
+    # multi-second critical section -- the pCloud teardown blocks -- whose side
+    # effect is the record that drives restoration, so a second fire from the
+    # keybinding and the polybar click could otherwise interleave and clear the
+    # record mid-transition. Never the state file itself: that gets removed.
+    exec 9>"${DATASAVE_LOCK:-${XDG_RUNTIME_DIR:-/tmp}/datasave-toggle.lock}" 2>/dev/null
+    if command -v flock >/dev/null 2>&1; then
+        flock -n 9 || exit 0
+    fi
     case "${1:-toggle}" in
         toggle)
             if "$STATUS" is-on; then disable_mode; else enable_mode; fi
