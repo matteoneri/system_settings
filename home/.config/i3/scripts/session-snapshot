@@ -115,21 +115,28 @@ resolve_claude() {
 
 # The top-level codex session is the open rollout whose own header says source=cli;
 # the others the process holds open are subagent threads.
+#
+# The account is taken from the rollout path rather than from CODEX_HOME: readlink
+# reports the canonical path, so a session started through the ~/.codex symlink still
+# names the home it actually writes to. env is only the fallback for a pid whose
+# rollout is not open yet.
 resolve_codex() {
-    local pid="$1" link f sid
+    local pid="$1" link f sid home
     for link in /proc/"$pid"/fd/*; do
         f=$(readlink "$link" 2>/dev/null)
         case "$f" in
-            "$HOME"/.codex/sessions/*rollout-*.jsonl) ;;
+            "$HOME"/.codex-own/sessions/*rollout-*.jsonl|\
+            "$HOME"/.codex-fna/sessions/*rollout-*.jsonl) ;;
             *) continue ;;
         esac
         sid=$(head -1 "$f" 2>/dev/null | jq -r 'select(.payload.source == "cli") | .payload.id // empty' 2>/dev/null)
         if [[ -n "$sid" ]]; then
-            agent_json codex "$sid" "" false
+            home="${f%/sessions/*}"
+            agent_json codex "$sid" "$home" false
             return
         fi
     done
-    agent_json codex "" "" true
+    agent_json codex "" "$(env_value "$pid" CODEX_HOME)" true
 }
 
 # Resolve whichever agent is in a window's foreground process list.

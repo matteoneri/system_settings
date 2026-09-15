@@ -82,9 +82,16 @@ bash tests/session-layout-roundtrip.sh
 ## Permission posture of resumed sessions
 
 The restore launches the agent binary directly with an explicit account, never
-through the zsh `claude` wrapper — the wrapper adds `--dangerously-skip-permissions`
-on every branch and would also stall on its interactive account prompt. So nothing
+through the zsh `claude` or `codex` wrapper — the `claude` wrapper adds
+`--dangerously-skip-permissions` on every branch, and both wrappers stall on their
+interactive account prompt when the directory does not name an account. So nothing
 here adds a permission bypass.
+
+The account travels with the terminal in the snapshot and is validated before use:
+Claude's as `CLAUDE_CONFIG_DIR` (`~/.claude-{own,fna}`), codex's as `CODEX_HOME`
+(`~/.codex-{own,fna}`). A snapshot written before codex had two homes carries no
+account for its codex terminals; those resume into the OWN home, which is where
+they were running. See `docs/codex-accounts.md`.
 
 What is *not* established: a session transcript records `permission-mode` events,
 so a session that was running with permissions bypassed may come back that way on

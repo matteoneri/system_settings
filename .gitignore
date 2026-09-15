@@ -16,6 +16,9 @@ id_ed25519*
 # Claude Code preferences
 home/claude-code/fna/preferences.json
 
+# Worktrees
+.worktrees/
+
 # Caches
 cache/
 *.cache

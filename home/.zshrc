@@ -86,6 +86,43 @@ claude() {
     fi
 }
 
+# Codex CLI account auto-switch based on project directory. Mirrors claude() above:
+# codex keeps account, history, config and sessions under $CODEX_HOME
+# (~/.codex-own vs ~/.codex-fna). ~/.codex is a symlink to the OWN home, so a
+# codex started outside this function — an i3 restore, a script — still lands
+# somewhere real instead of creating an empty home.
+codex() {
+    local account=""
+    local args=()
+    for arg in "$@"; do
+        case "$arg" in
+            --own) account="own" ;;
+            --fna) account="fna" ;;
+            *) args+=("$arg") ;;
+        esac
+    done
+
+    if [[ -z "$account" ]]; then
+        local dir="$PWD"
+        if [[ "$dir" == */Projects/ActiveProjects/OWN/* || "$dir" == */Projects/ActiveProjects/OWN ]]; then
+            account="own"
+        elif [[ "$dir" == */Projects/ActiveProjects/FNA/* || "$dir" == */Projects/ActiveProjects/FNA ]]; then
+            account="fna"
+        fi
+    fi
+
+    if [[ -n "$account" ]]; then
+        echo "Codex: using ${account:u} account"
+    else
+        echo "Account: [1] FNA (default)  [2] OWN"
+        read -r -k 1 "choice?"
+        [[ "$choice" != $'\n' ]] && echo
+        if [[ "$choice" == "2" ]]; then account="own"; else account="fna"; fi
+    fi
+
+    CODEX_HOME="$HOME/.codex-$account" command codex "${args[@]}"
+}
+
 # Project launcher
 proj() { ~/.config/i3/scripts/project-launch "$@"; }
 

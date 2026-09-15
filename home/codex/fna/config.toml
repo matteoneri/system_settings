@@ -1,0 +1,103 @@
+# FNA codex home. Selected by the `codex()` wrapper in ~/.zshrc (CODEX_HOME).
+# Kept deliberately close to ~/.codex-own/config.toml: only auth, history and
+# sessions differ between the two accounts. Both homes grant both project trees
+# on purpose — an FNA session may need to read an OWN worktree and vice versa.
+
+model = "gpt-6-astra"
+model_reasoning_effort = "high"
+approval_policy = "never"
+default_permissions = "all-worktrees"
+service_tier = "default"
+
+[projects."/home/matteo/Documents/Projects/ActiveProjects/FNA/fnet/fnet-presettle"]
+trust_level = "trusted"
+
+[projects."/home/matteo/Documents/Projects/ActiveProjects/OWN/portwatch"]
+trust_level = "trusted"
+
+[projects."/home/matteo"]
+trust_level = "trusted"
+
+[model_providers.byteplus-coding-plan]
+name = "byteplus-coding-plan"
+base_url = "https://ark.ap-southeast.bytepluses.com/api/coding/v3"
+env_key = "ARK_API_KEY"
+wire_api = "responses"
+
+[tui]
+status_line = [
+  "model-with-reasoning",
+  "current-dir",
+  "git-branch",
+  "context-remaining",
+  "five-hour-limit",
+  "weekly-limit",
+  "used-tokens",
+  "total-input-tokens",
+  "total-output-tokens",
+  "task-progress",
+  "codex-version",
+]
+
+[marketplaces.compound-engineering-plugin]
+last_updated = "2026-08-23T05:43:59Z"
+last_revision = "3ce5855fab3e230a2b40d267ebcbc81d6c403f74"
+source_type = "git"
+source = "https://github.com/EveryInc/compound-engineering-plugin.git"
+ref = "main"
+
+[plugins."compound-engineering@compound-engineering-plugin"]
+enabled = true
+
+[permissions.fnet-worktrees]
+description = "Workspace writes, shared Git metadata, and loopback QA for fnet-presettle."
+extends = ":workspace"
+
+[permissions.fnet-worktrees.filesystem]
+# Cargo targets and worktrees live here; see ~/.cargo/config.toml for why
+# incremental is off (sccache cannot cache an incremental compilation).
+# `.git` lets `git worktree add` register the new tree in `.git/worktrees/`.
+"/home/matteo/Documents/Projects/ActiveProjects/FNA/fnet/fnet-presettle/.git" = "write"
+# The worktrees themselves live outside the workspace, so `:workspace` does not cover them.
+"/home/matteo/.cache/fnet-wt" = "write"
+# Cargo targets. Never /tmp: it is a 32 GB tmpfs and a clean target here is ~65 GB.
+"/home/matteo/.cache/fnet-target" = "write"
+# Canonical Terraform state for the fnet-presettle dedicated replay/BM-6 box. Granted
+# 2026-08-25 so a release session can provision AND destroy the box in one cycle
+# (CLAUDE.md agent rule 7, as amended). Scoped to this state only — the sibling
+# ../EC2 GPU state stays read-only so no session can address the live ds_ec2_gpu box.
+"/home/matteo/Documents/Projects/ActiveProjects/FNA/terraform-gpu/EC2-fnet-replay" = "write"
+
+[permissions.fnet-worktrees.network]
+enabled = true
+allow_local_binding = true
+
+[permissions.fnet-worktrees.network.domains]
+"localhost" = "allow"
+"127.0.0.1" = "allow"
+"::1" = "allow"
+
+[permissions.all-worktrees]
+description = "fnet-presettle plus portwatch: either account can work in either tree."
+extends = "fnet-worktrees"
+
+[permissions.all-worktrees.filesystem]
+# `.git` lets `git worktree add` register a new tree in `.git/worktrees/` when the
+# session is launched from a worktree under `.worktrees/` (outside its workspace root).
+"/home/matteo/Documents/Projects/ActiveProjects/OWN/portwatch/.git" = "write"
+# Worktrees live inside the repo; a session launched from one still needs the others' parent.
+"/home/matteo/Documents/Projects/ActiveProjects/OWN/portwatch/.worktrees" = "write"
+# pre-merge-check baselines
+"/home/matteo/.cache/portwatch" = "write"
+
+[permissions.all-worktrees.network]
+enabled = true
+allow_local_binding = true
+
+[permissions.all-worktrees.network.domains]
+"localhost" = "allow"
+"127.0.0.1" = "allow"
+"::1" = "allow"
+
+[notice]
+hide_rate_limit_model_nudge = true
