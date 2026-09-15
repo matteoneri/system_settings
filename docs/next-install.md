@@ -4,6 +4,10 @@ Deferred from the 2026-09-09 security audit of the current laptop. These are
 account-model decisions that only make sense to get right on a fresh install,
 not to retrofit.
 
+See also [ssd-firmware-and-migration.md](ssd-firmware-and-migration.md): the Samsung 980 PRO
+is being carried over to the new machine and needs its firmware updated first, plus the
+LUKS-discards mistake to avoid repeating on the fresh install.
+
 ## Do not make the daily user root in all but name
 
 On the current machine the daily user is in `docker` and `libvirt`. Membership
