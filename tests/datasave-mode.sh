@@ -517,6 +517,42 @@ grep -q -- "-C" "$STUB_LOG" \
     || fail "the mode did not reach newsboat's launch"
 bash "$STATUS" clear >/dev/null 2>&1
 
+echo "== a long-lived child must not inherit the toggle's lock =="
+# Regression: main() takes the lock with `exec 9>`, which bash does not mark
+# close-on-exec, so a spawned kitty inherits the fd AND the flock's open file
+# description. Because that kitty is the newsboat dropdown and outlives the
+# toggle, the lock stayed held for the whole session and every later press hit
+# `flock -n 9 || exit 0` and silently did nothing -- the first successful
+# toggle-off poisoned the toggle until logout.
+state_off
+cat > "$STUBBIN/kitty" <<'STUB'
+#!/bin/bash
+exec sleep 20
+STUB
+chmod +x "$STUBBIN/kitty"
+make_stub pgrep 1        # newsboat not running, so the restore actually spawns
+make_stub systemctl 0
+
+run_toggle() {  # run_toggle <consumers> <verb>
+    env DATASAVE_STATUS="$STATUS" DATASAVE_STATE="$DATASAVE_STATE" \
+        DATASAVE_LOCK="$SCRATCH/toggle.lock" CONSUMERS="$1" \
+        SYSTEMCTL="$STUBBIN/systemctl" PGREP="$STUBBIN/pgrep" PKILL="$STUBBIN/pkill" \
+        I3MSG="$STUBBIN/i3-msg" KITTY="$STUBBIN/kitty" NOTIFY_SEND="$SCRATCH/stub-notify" \
+        STUB_LOG="$STUB_LOG" \
+        bash "$TOGGLE" "$2" >/dev/null 2>&1
+}
+
+bash "$STATUS" record newsboat >/dev/null 2>&1
+run_toggle newsboat off          # restores newsboat -> spawns the long-lived stub
+run_toggle newsboat on           # must still be able to take the lock
+if bash "$STATUS" is-on; then
+    pass "the toggle still works after a restore spawned a long-lived child"
+else
+    fail "the lock leaked into the spawned child; every later toggle is a silent no-op"
+fi
+pkill -f "$STUBBIN/kitty" 2>/dev/null; pkill -x sleep 2>/dev/null
+bash "$STATUS" clear >/dev/null 2>&1
+
 echo "== the tracked copies match the installed ones =="
 # sync.sh copies live -> repo, so a live edit that was never synced would leave
 # the tracked copy behind. /etc files are excluded: they are backup-only and are

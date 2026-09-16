@@ -140,8 +140,14 @@ ds_start_newsboat() {
     # A newsboat the user reopened during the mode needs no restore.
     newsboat_running && return 0
     # The for_window rule in ~/.config/i3/config returns it to the scratchpad.
+    # 9>&- closes the lock fd in the child. `exec 9>` in main() is not
+    # close-on-exec, so without this the spawned kitty inherits the fd and with
+    # it the flock's open file description -- and because this kitty is the
+    # long-lived newsboat dropdown, the lock would stay held for the rest of the
+    # session and every later toggle would silently exit at `flock -n`. Any
+    # long-lived process spawned from this script must close fd 9 the same way.
     "$KITTY" --class "$NEWSBOAT_CLASS" -e "$HOME/.config/i3/scripts/newsboat-launch" \
-        >/dev/null 2>&1 &
+        >/dev/null 2>&1 9>&- &
     local pid=$!
     disown 2>/dev/null || true
     # Report the spawn, not disown's status, or a kitty that failed to launch
