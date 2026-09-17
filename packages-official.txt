@@ -80,6 +80,7 @@ fio
 firefox
 firewalld
 fsarchiver
+fwupd
 galculator
 gimp
 git
@@ -153,6 +154,7 @@ nano
 nano-syntax-highlighting
 neovim
 netctl
+nethogs
 networkmanager
 network-manager-applet
 networkmanager-openconnect
@@ -175,7 +177,6 @@ nvidia-inst
 nvidia-open-lts
 obsidian
 openai-codex
-openfortivpn
 openssh
 os-prober
 pacman-contrib
@@ -260,6 +261,7 @@ virtiofsd
 virt-manager
 virt-viewer
 vlc
+vnstat
 welcome
 wget
 which

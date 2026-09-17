@@ -129,6 +129,12 @@ they fail; commit with `ce-commit` and raise the PR by hand there.
 - Imperative mood, ≤72 char subject line, one logical change per commit.
 - Never commit secrets, API keys, or credentials.
 - Never commit or push to main/master without explicit permission. Use feature branches.
+- **Never cite a work-unit id alone — prefix it with its plan's key.** A bare `U3` (or "step 4",
+  "task 2") names nothing once a second plan is live, and a reader grepping the history cannot tell
+  which document it meant. Use whatever identifies the plan uniquely in that repo — its filename
+  key, a short code, an issue number — spell it identically in the plan and in the commit, and
+  settle it before the first commit cites it: renumbering afterwards silently repoints every
+  subject already written.
 
 ## Shared memory
 

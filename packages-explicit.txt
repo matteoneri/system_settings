@@ -89,8 +89,8 @@ fio
 firefox
 firewalld
 flutter-bin
-forticlient-vpn
 fsarchiver
+fwupd
 galculator
 gcalcli
 gimp
@@ -171,6 +171,7 @@ nano
 nano-syntax-highlighting
 neovim
 netctl
+nethogs
 networkmanager
 network-manager-applet
 networkmanager-openconnect
@@ -194,8 +195,6 @@ nvidia-inst
 nvidia-open-lts
 obsidian
 openai-codex
-openfortigui
-openfortivpn
 openssh
 os-prober
 outline
@@ -267,6 +266,7 @@ sysfsutils
 sysstat
 systemd-sysvcompat
 tailscale
+teams-for-linux-bin
 telegram-desktop
 terraform
 texinfo
@@ -297,6 +297,7 @@ virt-manager
 virt-viewer
 visual-studio-code-bin
 vlc
+vnstat
 welcome
 wget
 which

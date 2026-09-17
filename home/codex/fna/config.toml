@@ -4,7 +4,7 @@
 # on purpose — an FNA session may need to read an OWN worktree and vice versa.
 
 model = "gpt-6-astra"
-model_reasoning_effort = "high"
+model_reasoning_effort = "max"
 approval_policy = "never"
 default_permissions = "all-worktrees"
 service_tier = "default"
@@ -38,6 +38,9 @@ status_line = [
   "task-progress",
   "codex-version",
 ]
+
+[tui.model_availability_nux]
+gpt-6-astra = 1
 
 [marketplaces.compound-engineering-plugin]
 last_updated = "2026-08-23T05:43:59Z"
