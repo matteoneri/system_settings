@@ -30,7 +30,7 @@ would prompt you daily on networks that are fine.
 | Consumer | While the mode is on |
 |---|---|
 | pCloud | Stopped through the same teardown the suspend path uses |
-| polybar ETH module | Serves its last value, no request to CoinGecko |
+| polybar ETH module | Throttled to one fetch per 5 minutes instead of every 60s |
 | polybar calendar module | Serves its cached day, no request to Google |
 | `archlinux-keyring-wkd-sync.timer` | Stopped |
 | newsboat | Quit if it is hidden; a later open starts without auto-reload |

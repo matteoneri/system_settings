@@ -232,6 +232,17 @@ out="$(PATH="$STUBBIN:$PATH" ETH_PRICE_CACHE="$SCRATCH/eth-cache" bash "$ETH" 2>
     && fail "eth_price made a network call while the mode is on" \
     || pass "eth_price made no network call while the mode is on"
 
+# ...but it must still refresh once the cached value ages out, so the price
+# stays live rather than frozen for the whole trip.
+: > "$CURL_LOG"
+touch -d '10 minutes ago' "$SCRATCH/eth-cache"
+PATH="$STUBBIN:$PATH" ETH_PRICE_CACHE="$SCRATCH/eth-cache" bash "$ETH" >/dev/null 2>&1
+[[ -s "$CURL_LOG" ]] \
+    && pass "eth_price refetches once the cache ages past the throttle" \
+    || fail "eth_price stayed frozen; the price would never update while the mode is on"
+: > "$CURL_LOG"
+printf '%s\n' "CACHED-ETH" > "$SCRATCH/eth-cache"
+
 out="$(PATH="$STUBBIN:$PATH" ETH_PRICE_CACHE="$SCRATCH/nope" bash "$ETH" 2>/dev/null)"
 [[ -n "$out" ]] \
     && pass "eth_price still renders with no cache (module stays on the bar)" \

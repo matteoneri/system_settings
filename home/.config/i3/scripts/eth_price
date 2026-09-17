@@ -21,19 +21,23 @@ else
 fi
 PLACEHOLDER=$'\ued58 --'
 
-# Data saving mode: serve the last rendered value and make no network call. With
-# no cache yet, fall back to the same placeholder a failed fetch prints, so the
-# module keeps rendering rather than vanishing from the bar.
-if "$DATASAVE_STATUS" is-on 2>/dev/null; then
-    if [ -s "$CACHE_FILE" ]; then
-        # No per-module staleness marker: the data saving indicator beside the
-        # battery already says every network-backed module is frozen, and
-        # repeating that glyph here just clutters the bar.
+# How often this module may still fetch while data saving mode is on. polybar
+# polls it every 60s; this throttles that to one request per interval instead of
+# freezing the value outright. A CoinGecko reply is a few hundred bytes, so the
+# cost is negligible either way and a live price is worth more than a frozen one.
+DATASAVE_MAX_AGE="${ETH_PRICE_DATASAVE_MAX_AGE:-300}"   # 5 minutes
+
+# Data saving mode: serve the cached value while it is fresh enough, and fall
+# through to a normal fetch once it ages out. With no cache at all, fetch rather
+# than render a placeholder -- one small request beats an empty module.
+if "$DATASAVE_STATUS" is-on 2>/dev/null && [ -s "$CACHE_FILE" ]; then
+    cache_age=$(( $(date +%s) - $(stat -c %Y "$CACHE_FILE" 2>/dev/null || echo 0) ))
+    if [ "$cache_age" -lt "$DATASAVE_MAX_AGE" ]; then
+        # No staleness marker: the indicator beside the battery already says the
+        # mode is on, and repeating that glyph here just clutters the bar.
         cat "$CACHE_FILE"
-    else
-        echo "$PLACEHOLDER"
+        exit 0
     fi
-    exit 0
 fi
 
 # Fetch ETH/USD price with 24h change from CoinGecko API
