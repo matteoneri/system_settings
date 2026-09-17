@@ -18,7 +18,10 @@ COLOR_LIVE="#f45070"
 # Icons (font 2)
 ICON_NORMAL="%{T2}󰃰%{T-}"
 ICON_LIVE="%{T2}󰕧%{T-}"
-ICON_PAUSED="%{T2}󰅤%{T-}"  # nf-md-cloud_off_outline — data saving mode is on
+# Shown instead of stale event text while data saving mode is on. Deliberately
+# the ordinary calendar glyph, not the mode's cloud: the indicator beside the
+# battery already carries that, and a second copy here reads as a second mode.
+ICON_PAUSED="$ICON_NORMAL"
 
 DATASAVE_STATUS="${DATASAVE_STATUS:-$HOME/.config/i3/scripts/datasave-status}"
 # Resolved once: polybar re-execs this script every 30s, and the mode cannot

@@ -225,9 +225,9 @@ out="$(PATH="$STUBBIN:$PATH" ETH_PRICE_CACHE="$SCRATCH/eth-cache" bash "$ETH" 2>
 [[ "$out" == CACHED-ETH* ]] \
     && pass "eth_price serves its cached value while the mode is on" \
     || fail "eth_price printed '$out' instead of the cached value"
-[[ "$out" != "CACHED-ETH" ]] \
-    && pass "the cached price is marked, not passed off as live" \
-    || fail "a frozen price renders identically to a live one"
+[[ "$out" == "CACHED-ETH" ]] \
+    && pass "the cached price carries no extra glyph (only the indicator shows the mode)" \
+    || fail "eth_price appended something to the cached value"
 [[ -s "$CURL_LOG" ]] \
     && fail "eth_price made a network call while the mode is on" \
     || pass "eth_price made no network call while the mode is on"
