@@ -406,6 +406,96 @@ assert_err_contains "the refusal says why, so it is not mistaken for a usage err
     env -u XDG_RUNTIME_DIR -u MIRROR_RERANK_LOCK TMPDIR="$SCRATCH/tmpfb" bash "$SCRIPT" run
 assert_false "reflector was not invoked after the refused fallback" test -e "$REFLECTOR_ARGS"
 
+# ---------------------------------------------------------------------------
+# The zsh hook: extracted from the tracked .zshrc and driven in isolation.
+# Non-interactive checks run it under plain `zsh -c`; the prompt checks run it
+# under a pseudo-terminal, because zsh's `read -k` reads the terminal, not
+# stdin. ZDOTDIR points at an empty directory so the real rc files stay out.
+# ---------------------------------------------------------------------------
+ZSHRC="${MIRROR_RERANK_ZSHRC:-$REPO_ROOT/home/.zshrc}"
+# Exported: the missing-script scenarios re-declare pty_run inside `env ... bash -c`.
+export HOOK="$SCRATCH/hook.zsh"
+sed -n '/^_mirror_rerank_check() {/,/^}/p' "$ZSHRC" > "$HOOK"
+export ZDOTDIR="$SCRATCH/zdot"
+mkdir -p "$ZDOTDIR"
+# An empty .zshrc, or `zsh -i` runs zsh-newuser-install and its menu swallows
+# the keystroke meant for the hook's prompt.
+: > "$ZDOTDIR/.zshrc"
+export MIRROR_RERANK_BIN="$SCRIPT"
+
+# Asserts a command's stdout equals an expected string.
+assert_out() {
+    local desc="$1" expected="$2"; shift 2
+    local actual
+    actual="$("$@" 2>/dev/null)"
+    if [[ "$actual" == "$expected" ]]; then pass "$desc"; else fail "$desc (expected '$expected', got '$actual')"; fi
+}
+# Asserts a command's stdout does not contain a substring.
+assert_not_contains() {
+    local desc="$1" needle="$2"; shift 2
+    local out
+    out="$("$@" 2>/dev/null)"
+    if [[ "$out" != *"$needle"* ]]; then pass "$desc"; else fail "$desc (output: '$out')"; fi
+}
+# pty_run <keys> : run the hook in an interactive zsh under a pseudo-terminal,
+# feeding <keys> as typed input. Prints the terminal transcript.
+pty_run() {
+    printf '%s' "$1" | script -qec "zsh -i -c 'source \"$HOOK\"; _mirror_rerank_check'" /dev/null 2>/dev/null
+}
+hook_noninteractive() { zsh -c "source \"$HOOK\"; _mirror_rerank_check; print rc=\$?"; }
+
+echo "== the hook is defined in .zshrc and called after the sync check, before fastfetch =="
+assert_true "the hook function is defined"  grep -q '^_mirror_rerank_check() {' "$ZSHRC"
+assert_true "the hook is called at startup" grep -q '^_mirror_rerank_check$'    "$ZSHRC"
+assert_true "the call sits between _settings_sync_check and fastfetch" \
+    bash -c "sed -n '/^_settings_sync_check\$/,/^fastfetch\$/p' '$ZSHRC' | grep -q '^_mirror_rerank_check\$'"
+
+echo "== non-interactive shells never see the prompt and never block =="
+reset_run
+assert_out "sourced in a non-interactive zsh, the hook returns 0 and prints nothing" "rc=0" hook_noninteractive
+assert_false "no re-rank was started from a non-interactive shell" test -e "$REFLECTOR_ARGS"
+assert_true  "state unchanged after the non-interactive call" state_ranked_at_is "$STALE"
+
+echo "== an interactive terminal with the flag armed sees the reasons, the cost, and the prompt =="
+reset_run
+export STUB_TZ=Europe/Helsinki
+assert_contains "the banner names the recorded zone" "Asia/Dubai"          pty_run n
+assert_contains "the banner names the live zone"     "Europe/Helsinki"     pty_run n
+assert_contains "the banner names the age"           "31 days"             pty_run n
+assert_contains "the banner names the cost"   "MB"                  pty_run n
+assert_contains "the prompt is asked"         "Update mirrors now?" pty_run n
+
+echo "== answering n leaves the flag armed and starts nothing =="
+reset_run
+pty_run n >/dev/null
+assert_false "no re-rank was started after n" test -e "$REFLECTOR_ARGS"
+assert_true  "state unchanged after n"         state_ranked_at_is "$STALE"
+
+echo "== answering y runs the re-rank and clears the flag =="
+reset_run
+pty_run y >/dev/null
+assert_true "reflector was invoked after y"      test -e "$REFLECTOR_ARGS"
+assert_true "state updated after a successful y" state_ranked_at_is "$NOW"
+
+echo "== an interactive terminal with the flag disarmed sees no prompt =="
+reset_run
+write_state Asia/Dubai $((NOW - 1 * DAY))
+assert_not_contains "no prompt when fresh" "Update mirrors now?" pty_run n
+assert_not_contains "no banner when fresh" "[mirrors]"           pty_run n
+
+echo "== a missing or broken script is reported once, never mistaken for disarmed =="
+reset_run
+assert_contains     "a missing script is reported"        "not being checked"  env MIRROR_RERANK_BIN="$SCRATCH/no-such-script" bash -c "$(declare -f pty_run); pty_run n"
+assert_not_contains "a missing script does not prompt"    "Update mirrors now?" env MIRROR_RERANK_BIN="$SCRATCH/no-such-script" bash -c "$(declare -f pty_run); pty_run n"
+export STUB_TZ_FAIL=1
+assert_contains     "a script exiting 2 is reported"      "not being checked"  pty_run n
+assert_not_contains "a script exiting 2 does not prompt"  "Update mirrors now?" pty_run n
+unset STUB_TZ_FAIL
+
+echo "== the tzupdate wrapper and its header are gone =="
+assert_false "no tzupdate function definition remains" grep -q '^tzupdate() {' "$ZSHRC"
+assert_false "no Timezone update header remains"       grep -q 'Timezone update' "$ZSHRC"
+
 echo
 if (( FAILED > 0 )); then
     echo "FAILED: $FAILED assertion(s)"

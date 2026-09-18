@@ -213,6 +213,37 @@ _settings_sync_check() {
 }
 _settings_sync_check
 
+# Mirror re-rank prompt. Asks at every new terminal until a re-rank succeeds:
+# it arms when the timezone changed or the ranking is over 30 days old. The
+# script owns that logic and the state; this only asks and relays. Interactive
+# terminals only -- Claude Code snapshots zshrc functions into non-interactive
+# tool shells, and a blocking read there would hang them. See
+# docs/plans/2026-09-18-001-feat-mirror-rerank-prompt-plan.md in system_settings.
+_mirror_rerank_check() {
+    [[ -o interactive && -t 0 ]] || return 0
+    local bin="${MIRROR_RERANK_BIN:-$HOME/.config/i3/scripts/mirror-rerank}"
+    local reasons rc answer
+    reasons="$("$bin" status 2>/dev/null)"
+    rc=$?
+    case $rc in
+        0) ;;
+        1) return 0 ;;
+        *)
+            echo "\n\033[1;33m[mirrors]\033[0m mirror-rerank is missing or broken (exit $rc); mirrors are not being checked."
+            return 0
+            ;;
+    esac
+    echo "\n\033[1;33m[mirrors]\033[0m A mirror re-rank is due:"
+    print -r -- "$reasons"
+    echo -n "Update mirrors now? [y/N] "
+    read -r -k 1 answer
+    [[ "$answer" != $'\n' ]] && echo
+    if [[ "$answer" =~ [yY] ]]; then
+        "$bin" run
+    fi
+}
+_mirror_rerank_check
+
 # Modern CLI aliases
 # `ls` is deliberately NOT aliased to eza: eza's -t is --time FIELD, not sort-by-mtime,
 # so `ls -t` silently fails and scripts/agents parsing it get an empty result.
@@ -221,20 +252,6 @@ alias la='eza -la --git'
 alias tree='eza --tree'
 alias cat='bat --paging=never --style=plain'
 alias catp='bat'
-
-# Timezone update + optional mirror sort
-tzupdate() {
-    command tzupdate "$@"
-    echo -n "Sort Arch + EndeavourOS mirrors? [y/N] "
-    read -r -k 1 answer
-    [[ "$answer" != $'\n' ]] && echo
-    if [[ "$answer" =~ [yY] ]]; then
-        echo "Sorting Arch mirrors..."
-        sudo reflector --latest 20 --protocol https --sort rate --save /etc/pacman.d/mirrorlist
-        echo "Sorting EndeavourOS mirrors..."
-        sudo eos-rankmirrors
-    fi
-}
 
 # Zoxide (smart cd)
 eval "$(zoxide init zsh)"
