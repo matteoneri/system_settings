@@ -6,6 +6,11 @@
 #   (no arg) | status   Print why a re-rank is due, one reason per line, then the
 #                       cost of accepting. Exit 0 when due, 1 when the ranking is
 #                       still fresh, 2 when the live zone cannot be read.
+#   run                 Rate-test a fresh pool of Arch mirrors and install the
+#                       fastest, then rank the EndeavourOS list, then record the
+#                       zone and time. Exit 0 on success, 1 when either ranking
+#                       failed or another run holds the lock, 2 on a setup error.
+#                       Only a full success writes the state.
 #
 # A re-rank is due when the recorded timezone differs from the live one, or the
 # recorded ranking is older than MAX_AGE_DAYS. Only a successful run writes the
@@ -22,8 +27,24 @@
 # unrelated exported variable cannot redirect one. The suite overrides them to
 # stub every external effect.
 TIMEDATECTL="${MIRROR_RERANK_TIMEDATECTL:-timedatectl}"
+REFLECTOR="${MIRROR_RERANK_REFLECTOR:-reflector}"
+EOS_RANKMIRRORS="${MIRROR_RERANK_EOS_RANKMIRRORS:-eos-rankmirrors}"
+SUDO="${MIRROR_RERANK_SUDO:-sudo}"
+MIRRORLIST="${MIRROR_RERANK_MIRRORLIST:-/etc/pacman.d/mirrorlist}"
+EOS_MIRRORLIST="${MIRROR_RERANK_EOS_MIRRORLIST:-/etc/pacman.d/endeavouros-mirrorlist}"
+# Empty means: resolve from the runtime directory when run starts.
+LOCK_FILE="${MIRROR_RERANK_LOCK:-}"
 
 MAX_AGE_DAYS=30
+
+# The pool: reflector filters to mirrors synced in the last 12 HOURS, keeps the
+# 60 most recently synced, rate-tests all 60 from here, and returns the fastest
+# 20. Rating downloads each mirror's full extra.db (~8.9MB), serially, so the
+# pool size is the cost; COST_LINE below must stay honest with it.
+POOL=60
+KEEP=20
+# A list this short did not come from a working rate test.
+MIN_SERVERS=10
 
 # Stated by the prompt before the user answers. Sixty mirrors at ~8.9MB each,
 # rated serially: keep this honest against the reflector command in run.
@@ -98,12 +119,164 @@ print_status() {
     printf '%s\n' "$COST_LINE"
 }
 
+# runtime_dir  ->  prints the directory that holds the lock and the temp files.
+# The runtime directory when there is one. Without it, a 0700 uid-scoped
+# directory -- never a bare /tmp path: another uid could plant the lock there,
+# and /tmp being sticky it could never be removed, so every later run would
+# report "in progress" and the feature would be dead until someone noticed.
+runtime_dir() {
+    if [ -n "${XDG_RUNTIME_DIR:-}" ]; then
+        printf '%s\n' "$XDG_RUNTIME_DIR"
+        return 0
+    fi
+    local dir="${TMPDIR:-/tmp}/mirror-rerank-$(id -u)"
+    if [ -e "$dir" ] && { [ ! -d "$dir" ] || [ ! -O "$dir" ]; }; then
+        printf 'mirror-rerank: %s exists and is not a directory owned by you; refusing to use it\n' "$dir" >&2
+        return 1
+    fi
+    mkdir -m 0700 -p -- "$dir" || return 1
+    # mkdir -p leaves an existing directory's mode alone; we own it, so tighten it.
+    chmod 0700 -- "$dir" || return 1
+    printf '%s\n' "$dir"
+}
+
+# validate_mirrorlist <list> <reflector-log>  ->  0 when the list is safe to install.
+# Shape alone is not enough. A link that serves reflector's status file but
+# times out every database download yields twenty https lines in arbitrary
+# order and a zero exit: a failed rate is logged as 0.00 KiB/s and the sort
+# proceeds on zeros. So the gate also requires that at least one mirror was
+# actually rated.
+validate_mirrorlist() {
+    local list="$1" log="$2"
+    local servers
+    servers="$(grep -c '^Server = ' -- "$list")" || servers=0
+    if (( servers < MIN_SERVERS )); then
+        printf 'mirror-rerank: reflector returned %s server line(s); at least %s expected. Not installing.\n' "$servers" "$MIN_SERVERS" >&2
+        return 1
+    fi
+    if grep -Ev '^[[:space:]]*(#|$)' -- "$list" | grep -qv '^Server = https://'; then
+        printf 'mirror-rerank: reflector returned a non-https server line. Not installing.\n' >&2
+        return 1
+    fi
+    if ! grep -E ' KiB/s ' -- "$log" | grep -qvE ' +0\.00 KiB/s'; then
+        printf 'mirror-rerank: no mirror could be rated, so the list is unranked. Not installing.\n' >&2
+        return 1
+    fi
+}
+
+# eos_succeeded <eos-log> <mtime-before>  ->  0 when the EndeavourOS list was ranked.
+# The tool's exit status cannot say. Its privileged write only prints "Failed."
+# and returns nothing, and the script ends on a temp-file cleanup, so a refused
+# password exits zero (/usr/bin/eos-rankmirrors, WriteSystemMirrorlist). So:
+# the file changed, or the tool said the ranking was already current -- and in
+# neither case did it print Failed.
+eos_succeeded() {
+    local log="$1" before="$2"
+    if grep -q 'Failed\.' -- "$log"; then
+        return 1
+    fi
+    if [ "$(stat -c %y -- "$EOS_MIRRORLIST" 2>/dev/null)" != "$before" ]; then
+        return 0
+    fi
+    grep -q 'was not ranked, not saving' -- "$log"
+}
+
+# write_state <zone>  ->  records zone and NOW. The only place the state is written.
+write_state() {
+    local zone="$1"
+    mkdir -p -- "$(dirname -- "$STATE_FILE")" || return 1
+    printf 'zone=%s\nranked_at=%s\n' "$zone" "$NOW" > "$STATE_FILE"
+}
+
+# Set by run, read by the EXIT trap. Script-global on purpose: a local would be
+# gone by the time the trap fires and the directory would leak.
+RUN_TMP=""
+
+run() {
+    local dir
+    if [ -z "$LOCK_FILE" ]; then
+        dir="$(runtime_dir)" || return 2
+        LOCK_FILE="$dir/mirror-rerank.lock"
+    else
+        dir="$(dirname -- "$LOCK_FILE")"
+    fi
+    if [ ! -d "$dir" ]; then
+        printf 'mirror-rerank: %s is not a directory; cannot take the lock\n' "$dir" >&2
+        return 2
+    fi
+
+    # One non-blocking lock, so two terminals answering y do not rank at once.
+    # flock rather than mkdir: the kernel releases it when this process dies,
+    # so a terminal closed mid-run cannot leave the feature saying "in
+    # progress" until reboot. Children get 9>&- so they do not inherit it.
+    exec 9>"$LOCK_FILE"
+    if ! flock -n 9; then
+        printf 'mirror-rerank: a re-rank is already in progress\n' >&2
+        return 1
+    fi
+
+    local zone
+    if ! zone="$(live_zone)"; then
+        printf 'mirror-rerank: cannot read the system timezone\n' >&2
+        return 2
+    fi
+
+    # Another terminal may have finished while this one sat at its prompt.
+    arming_reasons >/dev/null
+    case $? in
+        1) return 0 ;;
+        2) return 2 ;;
+    esac
+
+    RUN_TMP="$(mktemp -d -- "$dir/mirror-rerank.XXXXXX")" || return 2
+    trap 'rm -rf -- "$RUN_TMP"' EXIT
+
+    printf 'Rating Arch mirrors: %s tested, the fastest %s kept. This takes a while.\n' "$POOL" "$KEEP"
+    if ! "$REFLECTOR" --protocol https --age 12 --latest "$POOL" --sort rate --number "$KEEP" \
+            --verbose --save "$RUN_TMP/mirrorlist" 2>"$RUN_TMP/reflector.log" 9>&-; then
+        printf 'mirror-rerank: reflector failed:\n' >&2
+        tail -n 5 -- "$RUN_TMP/reflector.log" >&2
+        return 1
+    fi
+    validate_mirrorlist "$RUN_TMP/mirrorlist" "$RUN_TMP/reflector.log" || return 1
+
+    # Root for the two installs only, argv-form, never a shell string.
+    if [ -e "$MIRRORLIST" ]; then
+        if ! "$SUDO" install -o root -g root -m 0644 -- "$MIRRORLIST" "$MIRRORLIST.bak"; then
+            printf 'mirror-rerank: could not back up %s\n' "$MIRRORLIST" >&2
+            return 1
+        fi
+    fi
+    if ! "$SUDO" install -o root -g root -m 0644 -- "$RUN_TMP/mirrorlist" "$MIRRORLIST"; then
+        printf 'mirror-rerank: could not install %s\n' "$MIRRORLIST" >&2
+        return 1
+    fi
+
+    printf 'Ranking EndeavourOS mirrors.\n'
+    local before
+    before="$(stat -c %y -- "$EOS_MIRRORLIST" 2>/dev/null)"
+    if ! "$EOS_RANKMIRRORS" 2>"$RUN_TMP/eos.log" 9>&-; then
+        printf 'mirror-rerank: eos-rankmirrors failed:\n' >&2
+        tail -n 5 -- "$RUN_TMP/eos.log" >&2
+        return 1
+    fi
+    if ! eos_succeeded "$RUN_TMP/eos.log" "$before"; then
+        printf 'mirror-rerank: eos-rankmirrors did not write the EndeavourOS mirrorlist:\n' >&2
+        tail -n 5 -- "$RUN_TMP/eos.log" >&2
+        return 1
+    fi
+
+    write_state "$zone" || return 2
+    printf 'Mirrors ranked under %s.\n' "$zone"
+}
+
 main() {
     set -uo pipefail
     case "${1:-status}" in
         status) print_status ;;
+        run)    run ;;
         *)
-            printf 'usage: %s [status]\n' "${0##*/}" >&2
+            printf 'usage: %s [status|run]\n' "${0##*/}" >&2
             exit 2
             ;;
     esac
