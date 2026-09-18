@@ -10,7 +10,9 @@
 #                       fastest, then rank the EndeavourOS list, then record the
 #                       zone and time. Exit 0 on success, 1 when either ranking
 #                       failed or another run holds the lock, 2 on a setup error.
-#                       Only a full success writes the state.
+#                       When the ranking is already fresh, says so on stderr and
+#                       exits 0 without ranking. Only a full success writes the
+#                       state.
 #
 # A re-rank is due when the recorded timezone differs from the live one, or the
 # recorded ranking is older than MAX_AGE_DAYS. Only a successful run writes the
@@ -159,7 +161,14 @@ validate_mirrorlist() {
         printf 'mirror-rerank: reflector returned a non-https server line. Not installing.\n' >&2
         return 1
     fi
-    if ! grep -E ' KiB/s ' -- "$log" | grep -qvE ' +0\.00 KiB/s'; then
+    # Count rather than grep -q: under pipefail an early-exiting reader can kill
+    # the writer with SIGPIPE once the log is longer than one stdio buffer
+    # (sixty rated mirrors is), and the pipeline's 141 would read as "no mirror
+    # rated" and reject a good list after a ten-minute download. A count reads
+    # every line.
+    local rated
+    rated="$(grep -E ' KiB/s ' -- "$log" | grep -cvE ' +0\.00 KiB/s')" || rated=0
+    if (( rated < 1 )); then
         printf 'mirror-rerank: no mirror could be rated, so the list is unranked. Not installing.\n' >&2
         return 1
     fi
@@ -170,7 +179,8 @@ validate_mirrorlist() {
 # and returns nothing, and the script ends on a temp-file cleanup, so a refused
 # password exits zero (/usr/bin/eos-rankmirrors, WriteSystemMirrorlist). So:
 # the file changed, or the tool said the ranking was already current -- and in
-# neither case did it print Failed.
+# neither case did it print Failed. (with the dot: "Failed to connect" for one
+# offline mirror is not a failed write).
 eos_succeeded() {
     local log="$1" before="$2"
     if grep -q 'Failed\.' -- "$log"; then
@@ -204,7 +214,7 @@ RUN_TMP=""
 RUN_ZONE=""
 
 # acquire_lock  ->  0 holding the lock on fd 9 with RUN_DIR set; 1 when another
-# run holds it; 2 when the lock's directory cannot be used.
+# run holds it; 2 when the lock's directory or file cannot be used.
 acquire_lock() {
     if [ -z "$LOCK_FILE" ]; then
         RUN_DIR="$(runtime_dir)" || return 2
@@ -220,7 +230,13 @@ acquire_lock() {
     # flock rather than mkdir: the kernel releases it when this process dies,
     # so a terminal closed mid-run cannot leave the feature saying "in
     # progress" until reboot. Children get 9>&- so they do not inherit it.
-    exec 9>"$LOCK_FILE"
+    # The open is checked on its own: an unopenable lock file is a setup
+    # error, and flock on a never-opened fd would otherwise be reported as a
+    # held lock.
+    if ! exec 9>"$LOCK_FILE"; then
+        printf 'mirror-rerank: cannot open %s for the lock\n' "$LOCK_FILE" >&2
+        return 2
+    fi
     if ! flock -n 9; then
         printf 'mirror-rerank: a re-rank is already in progress\n' >&2
         return 1
@@ -229,8 +245,9 @@ acquire_lock() {
 
 # prepare_run  ->  lock taken, zone read into RUN_ZONE, still due, RUN_TMP made.
 # 0 to proceed; 1 when another run holds the lock; 2 on a setup error. Exits 0
-# quietly when the state is already fresh: another terminal may have finished
-# while this one sat at its prompt, and there is nothing to do.
+# when the state is already fresh: another terminal may have finished while
+# this one sat at its prompt, and there is nothing to do -- said on stderr so a
+# manual `run` is not mistaken for a re-rank.
 prepare_run() {
     acquire_lock || return "$?"
     if ! RUN_ZONE="$(live_zone)"; then
@@ -239,7 +256,10 @@ prepare_run() {
     fi
     arming_reasons >/dev/null
     case $? in
-        1) exit 0 ;;
+        1)
+            printf 'mirror-rerank: the ranking is fresh; nothing to do (remove %s to force a re-rank)\n' "$STATE_FILE" >&2
+            exit 0
+            ;;
         2)
             printf 'mirror-rerank: cannot read the system timezone\n' >&2
             return 2
@@ -261,12 +281,12 @@ install_arch_mirrorlist() {
 
     # Root for the two installs only, argv-form, never a shell string.
     if [ -e "$MIRRORLIST" ]; then
-        if ! "$SUDO" install -o root -g root -m 0644 -- "$MIRRORLIST" "$MIRRORLIST.bak"; then
+        if ! "$SUDO" install -o root -g root -m 0644 -- "$MIRRORLIST" "$MIRRORLIST.bak" 9>&-; then
             printf 'mirror-rerank: could not back up %s\n' "$MIRRORLIST" >&2
             return 1
         fi
     fi
-    if ! "$SUDO" install -o root -g root -m 0644 -- "$RUN_TMP/mirrorlist" "$MIRRORLIST"; then
+    if ! "$SUDO" install -o root -g root -m 0644 -- "$RUN_TMP/mirrorlist" "$MIRRORLIST" 9>&-; then
         printf 'mirror-rerank: could not install %s\n' "$MIRRORLIST" >&2
         return 1
     fi

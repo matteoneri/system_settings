@@ -37,7 +37,9 @@ script directly:
 
 ```bash
 ~/.config/i3/scripts/mirror-rerank status   # why it is armed; exit 1 when fresh
-~/.config/i3/scripts/mirror-rerank run      # re-rank now
+~/.config/i3/scripts/mirror-rerank run      # re-rank if due; when the ranking is
+                                            # fresh it says so on stderr and exits 0
+                                            # (remove the state file to force one)
 ```
 
 ## What `y` runs, and what it costs

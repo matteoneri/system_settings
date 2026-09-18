@@ -176,6 +176,7 @@ export MIRROR_RERANK_MIRRORLIST="$SCRATCH/etc/mirrorlist"
 export MIRROR_RERANK_EOS_MIRRORLIST="$SCRATCH/etc/endeavouros-mirrorlist"
 export MIRROR_RERANK_LOCK="$XDG_RUNTIME_DIR/mirror-rerank.lock"
 export SUDO_LOG="$SCRATCH/sudo.log"
+export SUDO_CALLS="$SCRATCH/sudo.calls"
 export REFLECTOR_ARGS="$SCRATCH/reflector.args"
 export EOS_CALLS="$SCRATCH/eos.calls"
 
@@ -204,13 +205,18 @@ if [[ -n "${STUB_EOS_TOUCH:-}" ]]; then sleep 0.01; touch "$MIRROR_RERANK_EOS_MI
 exit "${STUB_EOS_EXIT:-0}"
 STUB
 
-# sudo: record argv, fail when STUB_SUDO_FAIL is set, otherwise emulate
+# sudo: record argv and a call count; fail every call when STUB_SUDO_FAIL is
+# set, or only the Nth call when STUB_SUDO_FAIL_ON=N (so the two installs --
+# backup, then live -- can fail independently). Otherwise emulate
 # `install <opts> -- src dst` as a plain copy so the suite can inspect what
 # landed without being root.
 cat > "$STUBBIN/sudo" <<'STUB'
 #!/bin/bash
 printf '%s\n' "$*" >> "$SUDO_LOG"
+n=$(( $(cat "$SUDO_CALLS" 2>/dev/null || echo 0) + 1 ))
+printf '%s\n' "$n" > "$SUDO_CALLS"
 [[ -n "${STUB_SUDO_FAIL:-}" ]] && exit 1
+[[ -n "${STUB_SUDO_FAIL_ON:-}" && "$n" == "$STUB_SUDO_FAIL_ON" ]] && exit 1
 if [[ "$1" == install ]]; then
     while (( $# )) && [[ "$1" != -- ]]; do shift; done
     [[ "$1" == -- ]] && shift
@@ -224,7 +230,11 @@ export MIRROR_RERANK_REFLECTOR="$STUBBIN/reflector"
 export MIRROR_RERANK_EOS_RANKMIRRORS="$STUBBIN/eos-rankmirrors"
 export MIRROR_RERANK_SUDO="$STUBBIN/sudo"
 
-# Fixtures: what reflector might hand back. $repo/$arch stay literal.
+# Fixtures: what reflector might hand back. The list is the twenty kept
+# mirrors; the log is the sixty rated ones, at realistic URL lengths so it is
+# larger than one stdio buffer -- a gate that reads it with an early-exiting
+# grep -q under pipefail can be killed by SIGPIPE and reject a good list.
+# $repo/$arch stay literal.
 FX="$SCRATCH/fx"
 mkdir -p "$FX"
 {
@@ -232,33 +242,41 @@ mkdir -p "$FX"
     for i in $(seq 1 20); do printf 'Server = https://m%02d.example/archlinux/$repo/os/$arch\n' "$i"; done
 } > "$FX/good.list"
 {
-    printf 'rating 20 mirror(s) by download speed\nServer  Rate  Time\n'
-    for i in $(seq 1 20); do printf 'https://m%02d.example/archlinux/  %8.2f KiB/s  %7.2f s\n' "$i" 1234.56 7.20; done
+    printf 'rating 60 mirror(s) by download speed\nServer  Rate  Time\n'
+    for i in $(seq 1 60); do
+        printf 'https://mirror%02d.some-long-hosting-provider-name.example/pub/archlinux/  %8.2f KiB/s  %7.2f s\n' "$i" 1234.56 7.20
+    done
 } > "$FX/good.log"
 head -4 "$FX/good.list" > "$FX/truncated.list"
 : > "$FX/empty.list"
 sed '5s|https://|http://|' "$FX/good.list" > "$FX/plaintext.list"
 {
-    printf 'rating 20 mirror(s) by download speed\nServer  Rate  Time\n'
-    for i in $(seq 1 20); do
-        printf 'failed to rate http(s) download (https://m%02d.example/...): timed out\n' "$i"
-        printf 'https://m%02d.example/archlinux/      0.00 KiB/s     0.00 s\n' "$i"
+    printf 'rating 60 mirror(s) by download speed\nServer  Rate  Time\n'
+    for i in $(seq 1 60); do
+        printf 'failed to rate http(s) download (https://mirror%02d.some-long-hosting-provider-name.example/...): timed out\n' "$i"
+        printf 'https://mirror%02d.some-long-hosting-provider-name.example/pub/archlinux/      0.00 KiB/s     0.00 s\n' "$i"
     done
 } > "$FX/allfailed.log"
+(( $(wc -c < "$FX/good.log") > 4096 )) \
+    && pass "the good reflector log exceeds one 4096-byte stdio buffer ($(wc -c < "$FX/good.log") bytes)" \
+    || fail "the good reflector log is too small to exercise the pipe buffer boundary"
 
 EOS_OK_NOTICE="Moving old EndeavourOS mirrorlist to .bak. Writing new ranked EndeavourOS mirrorlist."
 EOS_UNCHANGED_NOTICE="The new EndeavourOS mirrorlist file was not ranked, not saving it."
+# What eos-rankmirrors-helper prints for one unreachable mirror during a run
+# that otherwise succeeds; it must never be read as the write failing.
+EOS_OFFLINE_MIRROR="Failed to connect, the mirror may be currently offline."
 
 # reset_run: armed by age, live lists in place, every stub set to succeed.
 reset_run() {
     printf '# old arch list\nServer = https://old.example/$repo/os/$arch\n' > "$MIRROR_RERANK_MIRRORLIST"
     printf '# old eos list\nServer = https://old-eos.example/$repo/$arch\n' > "$MIRROR_RERANK_EOS_MIRRORLIST"
-    rm -f "$MIRROR_RERANK_MIRRORLIST.bak" "$SUDO_LOG" "$REFLECTOR_ARGS" "$EOS_CALLS"
+    rm -f "$MIRROR_RERANK_MIRRORLIST.bak" "$SUDO_LOG" "$SUDO_CALLS" "$REFLECTOR_ARGS" "$EOS_CALLS"
     write_state Asia/Dubai $((NOW - 31 * DAY))
     export STUB_TZ=Asia/Dubai
     export STUB_REFLECTOR_OUT="$FX/good.list" STUB_REFLECTOR_STDERR="$FX/good.log" STUB_REFLECTOR_EXIT=0
     export STUB_EOS_STDERR="$EOS_OK_NOTICE" STUB_EOS_TOUCH=1 STUB_EOS_EXIT=0
-    unset STUB_SUDO_FAIL
+    unset STUB_SUDO_FAIL STUB_SUDO_FAIL_ON
 }
 state_ranked_at_is() { grep -qx "ranked_at=$1" "$MIRROR_RERANK_STATE"; }
 live_list_is_old()   { grep -q 'old.example' "$MIRROR_RERANK_MIRRORLIST"; }
@@ -276,6 +294,18 @@ assert_true "reflector was invoked"        test -s "$REFLECTOR_ARGS"
 assert_true "eos-rankmirrors was invoked"  test -s "$EOS_CALLS"
 assert_true "the validated list is installed as the live Arch mirrorlist" grep -q 'm01.example' "$MIRROR_RERANK_MIRRORLIST"
 assert_true "the temp directory was removed" no_temp_left
+
+echo "== run: a good rate test is accepted every time, not most times =="
+# The rated gate reads a log larger than one stdio buffer; twenty back-to-back
+# runs would surface an early-exit pipeline being killed by SIGPIPE.
+flaky=0
+for _ in $(seq 1 20); do
+    reset_run
+    bash "$SCRIPT" run >/dev/null 2>&1 || flaky=$((flaky + 1))
+done
+(( flaky == 0 )) \
+    && pass "twenty consecutive runs on the 60-line log all succeeded" \
+    || fail "$flaky of twenty runs on the 60-line log were rejected"
 
 echo "== run: reflector is asked for a wide fresh pool, verbose, keeping twenty =="
 reset_run
@@ -301,32 +331,37 @@ assert_true  "the live Arch list is untouched" live_list_is_old
 assert_true  "no backup was written"           test ! -e "$MIRROR_RERANK_MIRRORLIST.bak"
 assert_true  "the state file is unchanged"     state_ranked_at_is "$STALE"
 assert_false "eos-rankmirrors was not reached" test -e "$EOS_CALLS"
+assert_false "sudo was never invoked"          test -e "$SUDO_LOG"
 assert_true  "the temp directory does not survive a failed run" no_temp_left
 
-echo "== run: the validation gate rejects a truncated or empty list =="
+echo "== run: the validation gate rejects a truncated or empty list, before any sudo =="
 reset_run
 export STUB_REFLECTOR_OUT="$FX/truncated.list"
-assert_exit "a 3-server list is rejected"       1 bash "$SCRIPT" run
-assert_true "live list untouched after truncated" live_list_is_old
-assert_true "state unchanged after truncated"     state_ranked_at_is "$STALE"
+assert_exit  "a 3-server list is rejected"       1 bash "$SCRIPT" run
+assert_true  "live list untouched after truncated" live_list_is_old
+assert_true  "state unchanged after truncated"     state_ranked_at_is "$STALE"
+assert_false "sudo was never invoked for the truncated list" test -e "$SUDO_LOG"
 reset_run
 export STUB_REFLECTOR_OUT="$FX/empty.list"
-assert_exit "an empty list is rejected"        1 bash "$SCRIPT" run
-assert_true "live list untouched after empty"  live_list_is_old
+assert_exit  "an empty list is rejected"        1 bash "$SCRIPT" run
+assert_true  "live list untouched after empty"  live_list_is_old
+assert_false "sudo was never invoked for the empty list" test -e "$SUDO_LOG"
 
-echo "== run: the validation gate rejects a plaintext server line =="
+echo "== run: the validation gate rejects a plaintext server line, before any sudo =="
 reset_run
 export STUB_REFLECTOR_OUT="$FX/plaintext.list"
-assert_exit "a list with one http:// line is rejected" 1 bash "$SCRIPT" run
-assert_true "live list untouched after plaintext"       live_list_is_old
-assert_true "state unchanged after plaintext"           state_ranked_at_is "$STALE"
+assert_exit  "a list with one http:// line is rejected" 1 bash "$SCRIPT" run
+assert_true  "live list untouched after plaintext"       live_list_is_old
+assert_true  "state unchanged after plaintext"           state_ranked_at_is "$STALE"
+assert_false "sudo was never invoked for the plaintext list" test -e "$SUDO_LOG"
 
-echo "== run: the validation gate rejects a list where no mirror was actually rated =="
+echo "== run: the validation gate rejects a list where no mirror was actually rated, before any sudo =="
 reset_run
 export STUB_REFLECTOR_STDERR="$FX/allfailed.log"
-assert_exit "twenty https lines with every rate 0.00 are rejected" 1 bash "$SCRIPT" run
-assert_true "live list untouched after all-failed"  live_list_is_old
-assert_true "state unchanged after all-failed"      state_ranked_at_is "$STALE"
+assert_exit  "twenty https lines with every rate 0.00 are rejected" 1 bash "$SCRIPT" run
+assert_true  "live list untouched after all-failed"  live_list_is_old
+assert_true  "state unchanged after all-failed"      state_ranked_at_is "$STALE"
+assert_false "sudo was never invoked for the unrated list" test -e "$SUDO_LOG"
 
 echo "== run: the previous Arch list is recoverable from .bak =="
 reset_run
@@ -346,18 +381,44 @@ export STUB_SUDO_FAIL=1
 assert_exit "run exits non-zero when sudo fails" 1 bash "$SCRIPT" run
 assert_true "live list untouched after sudo failure" live_list_is_old
 assert_true "state unchanged after sudo failure"     state_ranked_at_is "$STALE"
+assert_true "the temp directory does not survive a sudo failure" no_temp_left
+
+echo "== run: the backup succeeding but the live install failing is still a failure =="
+# One invocation only: the stub's call counter spans the scenario, so a second
+# run would see the install as call 4 and let it succeed.
+reset_run
+export STUB_SUDO_FAIL_ON=2
+bash "$SCRIPT" run >/dev/null 2>"$SCRATCH/install-fail.err"
+rc=$?
+(( rc == 1 )) \
+    && pass "run exits 1 when the second install fails" \
+    || fail "run exits 1 when the second install fails (got $rc)"
+grep -q 'could not install' "$SCRATCH/install-fail.err" \
+    && pass "the failure names the install, not the backup" \
+    || fail "the failure names the install, not the backup (stderr: '$(cat "$SCRATCH/install-fail.err")')"
+assert_true "the backup was written before the install was attempted" test -f "$MIRROR_RERANK_MIRRORLIST.bak"
+assert_true "the live list is untouched when its install fails"        live_list_is_old
+assert_true "state unchanged when the live install fails"              state_ranked_at_is "$STALE"
+unset STUB_SUDO_FAIL_ON
 
 echo "== run: eos-rankmirrors exiting zero after printing Failed is a failure =="
 reset_run
 export STUB_EOS_STDERR="$EOS_OK_NOTICE Failed." STUB_EOS_TOUCH= STUB_EOS_EXIT=0
 assert_exit "run exits non-zero when the EndeavourOS write silently failed" 1 bash "$SCRIPT" run
 assert_true "state unchanged after the silent EndeavourOS failure"           state_ranked_at_is "$STALE"
+assert_true "the temp directory does not survive an EndeavourOS failure"     no_temp_left
 # Failed. must win even beside the no-change notice: the tool's messages are
 # not a contract, and a printed failure is never read as success.
 reset_run
 export STUB_EOS_STDERR="$EOS_UNCHANGED_NOTICE Failed." STUB_EOS_TOUCH= STUB_EOS_EXIT=0
 assert_exit "Failed. beside the no-change notice is still a failure" 1 bash "$SCRIPT" run
 assert_true "state unchanged when Failed. accompanies the no-change notice" state_ranked_at_is "$STALE"
+
+echo "== run: one unreachable EndeavourOS mirror is not a failed write =="
+reset_run
+export STUB_EOS_STDERR="$EOS_OFFLINE_MIRROR $EOS_OK_NOTICE" STUB_EOS_TOUCH=1 STUB_EOS_EXIT=0
+assert_exit "run exits 0 when a mirror was offline but the list was written" 0 bash "$SCRIPT" run
+assert_true "state updated despite the offline-mirror notice"                 state_ranked_at_is "$NOW"
 
 echo "== run: eos-rankmirrors reporting no change is a success =="
 reset_run
@@ -388,13 +449,25 @@ assert_true  "live list untouched under a held lock"                 live_list_i
 assert_true  "state unchanged under a held lock"                     state_ranked_at_is "$STALE"
 exec 8>&-
 
-echo "== run: a free lock but fresh state exits quietly without ranking =="
+echo "== run: a lock file that cannot be opened is a setup error, not a held lock =="
+reset_run
+mkdir -p "$SCRATCH/ro"
+chmod 0555 "$SCRATCH/ro"
+assert_exit         "run exits 2 when the lock file cannot be created" 2 \
+    env MIRROR_RERANK_LOCK="$SCRATCH/ro/mirror-rerank.lock" bash "$SCRIPT" run
+assert_err_contains "the unopenable lock is reported as such" "cannot open" \
+    env MIRROR_RERANK_LOCK="$SCRATCH/ro/mirror-rerank.lock" bash "$SCRIPT" run
+assert_false        "reflector was not invoked when the lock could not be opened" test -e "$REFLECTOR_ARGS"
+chmod 0755 "$SCRATCH/ro"
+
+echo "== run: a free lock but fresh state exits quietly without ranking, and says why on stderr =="
 reset_run
 write_state Asia/Dubai $((NOW - 1 * DAY))
-assert_exit   "run exits 0 when the state is already fresh" 0 bash "$SCRIPT" run
-assert_silent "run prints nothing when the state is already fresh" bash "$SCRIPT" run
-assert_false  "reflector was not invoked when already fresh" test -e "$REFLECTOR_ARGS"
-assert_true   "state unchanged when already fresh"           state_ranked_at_is $((NOW - 1 * DAY))
+assert_exit         "run exits 0 when the state is already fresh" 0 bash "$SCRIPT" run
+assert_silent       "run prints nothing on stdout when the state is already fresh" bash "$SCRIPT" run
+assert_err_contains "run tells the operator the ranking is fresh" "fresh" bash "$SCRIPT" run
+assert_false        "reflector was not invoked when already fresh" test -e "$REFLECTOR_ARGS"
+assert_true         "state unchanged when already fresh"           state_ranked_at_is $((NOW - 1 * DAY))
 
 echo "== run: with no runtime dir, a planted fallback parent refuses to start =="
 reset_run
@@ -438,11 +511,28 @@ assert_not_contains() {
     if [[ "$out" != *"$needle"* ]]; then pass "$desc"; else fail "$desc (output: '$out')"; fi
 }
 # pty_run <keys> : run the hook in an interactive zsh under a pseudo-terminal,
-# feeding <keys> as typed input. Prints the terminal transcript.
+# typing <keys> only after the prompt has had time to render -- the hook must
+# ignore anything typed before it. Prints the terminal transcript. The timeout
+# turns a hook that blocks forever into one failed assertion, not a hung suite:
+# script does not pass the pipe's EOF to the terminal, so an unanswered read
+# would wait indefinitely.
+PTY_CMD="zsh -i -c 'source \"$HOOK\"; _mirror_rerank_check; print SENTINEL_AFTER_HOOK'"
+export PTY_CMD
 pty_run() {
-    printf '%s' "$1" | script -qec "zsh -i -c 'source \"$HOOK\"; _mirror_rerank_check'" /dev/null 2>/dev/null
+    { sleep 1.5; printf '%s' "$1"; sleep 0.5; } \
+        | timeout 20 script -qec "$PTY_CMD" /dev/null 2>/dev/null
+}
+# pty_typeahead <keys> : <keys> arrive before zsh even starts, as a user typing
+# while the terminal opens, and Enter follows once the prompt is up -- the
+# realistic sequence, and the one that must not be read as a yes.
+pty_typeahead() {
+    { printf '%s' "$1"; sleep 1.5; printf '\n'; sleep 0.5; } \
+        | timeout 20 script -qec "$PTY_CMD" /dev/null 2>/dev/null
 }
 hook_noninteractive() { zsh -c "source \"$HOOK\"; _mirror_rerank_check; print rc=\$?"; }
+# Interactive forced on, but stdin is a pipe, not a terminal: the guard's
+# mixed case, and the one that keeps a blocking read out of automation.
+hook_interactive_no_tty() { printf '' | zsh -i -c "source \"$HOOK\"; _mirror_rerank_check; print rc=\$?"; }
 
 echo "== the hook is defined in .zshrc and called after the sync check, before fastfetch =="
 assert_true "the hook function is defined"  grep -q '^_mirror_rerank_check() {' "$ZSHRC"
@@ -456,14 +546,19 @@ assert_out "sourced in a non-interactive zsh, the hook returns 0 and prints noth
 assert_false "no re-rank was started from a non-interactive shell" test -e "$REFLECTOR_ARGS"
 assert_true  "state unchanged after the non-interactive call" state_ranked_at_is "$STALE"
 
+echo "== an interactive shell without a terminal on stdin never sees the prompt either =="
+reset_run
+assert_out   "interactive but no TTY: the hook returns 0 and prints nothing" "rc=0" hook_interactive_no_tty
+assert_false "no re-rank was started from the interactive-no-TTY shell" test -e "$REFLECTOR_ARGS"
+
 echo "== an interactive terminal with the flag armed sees the reasons, the cost, and the prompt =="
 reset_run
 export STUB_TZ=Europe/Helsinki
 assert_contains "the banner names the recorded zone" "Asia/Dubai"          pty_run n
 assert_contains "the banner names the live zone"     "Europe/Helsinki"     pty_run n
 assert_contains "the banner names the age"           "31 days"             pty_run n
-assert_contains "the banner names the cost"   "MB"                  pty_run n
-assert_contains "the prompt is asked"         "Update mirrors now?" pty_run n
+assert_contains "the banner names the cost"          "MB"                  pty_run n
+assert_contains "the prompt is asked"                "Update mirrors now?" pty_run n
 
 echo "== answering n leaves the flag armed and starts nothing =="
 reset_run
@@ -471,11 +566,32 @@ pty_run n >/dev/null
 assert_false "no re-rank was started after n" test -e "$REFLECTOR_ARGS"
 assert_true  "state unchanged after n"         state_ranked_at_is "$STALE"
 
+echo "== pressing Enter at the prompt is not a yes =="
+reset_run
+pty_run $'\n' >/dev/null
+assert_false "no re-rank was started after Enter" test -e "$REFLECTOR_ARGS"
+assert_true  "state unchanged after Enter"         state_ranked_at_is "$STALE"
+
 echo "== answering y runs the re-rank and clears the flag =="
 reset_run
 pty_run y >/dev/null
 assert_true "reflector was invoked after y"      test -e "$REFLECTOR_ARGS"
 assert_true "state updated after a successful y" state_ranked_at_is "$NOW"
+
+echo "== a y typed before the prompt appeared is not an answer =="
+reset_run
+typeahead_out="$(pty_typeahead y)"
+[[ "$typeahead_out" == *SENTINEL_AFTER_HOOK* ]] \
+    && pass "the hook returned normally after discarding the buffered y" \
+    || fail "the hook did not return after the buffered y (transcript: '$typeahead_out')"
+assert_false "a buffered y did not start a re-rank" test -e "$REFLECTOR_ARGS"
+assert_true  "state unchanged after the buffered y"  state_ranked_at_is "$STALE"
+
+echo "== Ctrl-C at the prompt dismisses it and the rest of .zshrc still runs =="
+reset_run
+assert_contains "the line after the hook call still executes after Ctrl-C" "SENTINEL_AFTER_HOOK" pty_run $'\003'
+assert_false    "no re-rank was started by Ctrl-C" test -e "$REFLECTOR_ARGS"
+assert_true     "state unchanged after Ctrl-C"      state_ranked_at_is "$STALE"
 
 echo "== an interactive terminal with the flag disarmed sees no prompt =="
 reset_run

@@ -221,8 +221,13 @@ _settings_sync_check
 # docs/plans/2026-09-18-001-feat-mirror-rerank-prompt-plan.md in system_settings.
 _mirror_rerank_check() {
     [[ -o interactive && -t 0 ]] || return 0
+    # Ctrl-C at the prompt, or during the run, must return from this function,
+    # not abort the rest of .zshrc: the aliases, zoxide, starship and fastfetch
+    # below this call would otherwise be skipped for that shell.
+    setopt localtraps
+    trap 'return 1' INT
     local bin="${MIRROR_RERANK_BIN:-$HOME/.config/i3/scripts/mirror-rerank}"
-    local reasons rc answer
+    local reasons rc answer discard
     reasons="$("$bin" status 2>/dev/null)"
     rc=$?
     case $rc in
@@ -235,6 +240,9 @@ _mirror_rerank_check() {
     esac
     echo "\n\033[1;33m[mirrors]\033[0m A mirror re-rank is due:"
     print -r -- "$reasons"
+    # Discard anything typed while the terminal was starting up, so a command
+    # that happens to begin with y is not taken as the answer.
+    while read -t -k 1 -s discard; do :; done
     echo -n "Update mirrors now? [y/N] "
     read -r -k 1 answer
     [[ "$answer" != $'\n' ]] && echo
