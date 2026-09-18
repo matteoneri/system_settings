@@ -574,6 +574,7 @@ else
     drift=0
     for rel in .config/i3/scripts/datasave-status \
                .config/i3/scripts/datasave-toggle \
+               .config/i3/scripts/mirror-rerank \
                .config/i3/scripts/newsboat-launch \
                .config/i3/scripts/eth_price \
                .config/i3/scripts/gcal-next \
