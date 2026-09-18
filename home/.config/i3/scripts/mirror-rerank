@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+#
+# mirror-rerank — arm, ask, and run a pacman mirror re-rank when the laptop moves
+# or the ranking rots.
+#
+#   (no arg) | status   Print why a re-rank is due, one reason per line, then the
+#                       cost of accepting. Exit 0 when due, 1 when the ranking is
+#                       still fresh, 2 when the live zone cannot be read.
+#
+# A re-rank is due when the recorded timezone differs from the live one, or the
+# recorded ranking is older than MAX_AGE_DAYS. Only a successful run writes the
+# state, so a declined or failed run leaves the next shell asking again -- that
+# persistence is the feature; see docs/plans/2026-09-18-001-feat-mirror-rerank-prompt-plan.md.
+#
+# This script owns the state file and its format. The zshrc hook asks this
+# script and prints its answer rather than reading the file, so the format
+# stays private here.
+#
+# Used by ~/.zshrc (_mirror_rerank_check).
+
+# Every external and every path is an env-overridable constant, namespaced so an
+# unrelated exported variable cannot redirect one. The suite overrides them to
+# stub every external effect.
+TIMEDATECTL="${MIRROR_RERANK_TIMEDATECTL:-timedatectl}"
+
+MAX_AGE_DAYS=30
+
+# Stated by the prompt before the user answers. Sixty mirrors at ~8.9MB each,
+# rated serially: keep this honest against the reflector command in run.
+COST_LINE="re-ranking downloads up to ~530MB and takes 5-10 min"
+
+# The state must survive reboot -- it records what this machine last ranked and
+# under which zone -- so it lives under the XDG state directory, not the runtime
+# dir or /tmp. It is machine-local and deliberately not synced.
+STATE_FILE="${MIRROR_RERANK_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/mirror-rerank/state}"
+
+# Overridable only so the suite can pin the 30-day boundary exactly instead of
+# racing the clock between writing a timestamp and reading it back.
+NOW="${MIRROR_RERANK_NOW:-$(date +%s)}"
+
+# live_zone  ->  prints the system timezone; fails when it cannot be read.
+live_zone() {
+    local zone
+    zone="$("$TIMEDATECTL" show -p Timezone --value 2>/dev/null)" || return 1
+    [ -n "$zone" ] || return 1
+    printf '%s\n' "$zone"
+}
+
+# read_state  ->  sets STATE_ZONE and STATE_RANKED_AT from the state file.
+# Fails when the file is missing, or either field is absent or malformed. The
+# caller treats that as "no usable record", which arms: garbage must never read
+# as fresh.
+read_state() {
+    STATE_ZONE=""
+    STATE_RANKED_AT=""
+    [ -r "$STATE_FILE" ] || return 1
+    local line
+    while IFS= read -r line; do
+        case "$line" in
+            zone=*)      STATE_ZONE="${line#zone=}" ;;
+            ranked_at=*) STATE_RANKED_AT="${line#ranked_at=}" ;;
+        esac
+    done < "$STATE_FILE"
+    [ -n "$STATE_ZONE" ] || return 1
+    case "$STATE_RANKED_AT" in
+        ''|*[!0-9]*) return 1 ;;
+    esac
+}
+
+# arming_reasons  ->  prints one line per reason a re-rank is due.
+# Exit 0 when due, 1 when fresh, 2 when the live zone cannot be read. Both
+# reasons print when both hold, so the prompt can name them both.
+arming_reasons() {
+    local zone
+    zone="$(live_zone)" || return 2
+    if ! read_state; then
+        printf 'no record of a previous ranking\n'
+        return 0
+    fi
+    local due=1
+    if [ "$STATE_ZONE" != "$zone" ]; then
+        printf 'timezone changed: %s -> %s\n' "$STATE_ZONE" "$zone"
+        due=0
+    fi
+    if (( NOW - STATE_RANKED_AT > MAX_AGE_DAYS * 86400 )); then
+        printf 'last ranked %d days ago (limit %d)\n' $(( (NOW - STATE_RANKED_AT) / 86400 )) "$MAX_AGE_DAYS"
+        due=0
+    fi
+    return "$due"
+}
+
+print_status() {
+    local reasons rc
+    reasons="$(arming_reasons)"
+    rc=$?
+    (( rc == 0 )) || return "$rc"
+    printf '%s\n' "$reasons"
+    printf '%s\n' "$COST_LINE"
+}
+
+main() {
+    set -uo pipefail
+    case "${1:-status}" in
+        status) print_status ;;
+        *)
+            printf 'usage: %s [status]\n' "${0##*/}" >&2
+            exit 2
+            ;;
+    esac
+}
+
+if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
+    main "$@"
+fi
