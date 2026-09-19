@@ -178,8 +178,26 @@ _kitty_theme_for_dir  # apply on shell start too
 _browser_for_dir
 _auto_venv_check
 
-# Weekly system settings sync check
+# _ask_yn "<prompt>"  ->  0 on y/Y, 1 on anything else. One keystroke, read only
+# after discarding whatever was typed while the terminal was starting up, so a
+# command that happens to begin with y is not taken as the answer. Every
+# startup prompt in this file asks through here.
+_ask_yn() {
+    local answer discard
+    while read -t -k 1 -s discard; do :; done
+    echo -n "$1"
+    read -r -k 1 answer
+    [[ "$answer" != $'\n' ]] && echo
+    [[ "$answer" =~ [yY] ]]
+}
+
+# Weekly system settings sync check. Interactive terminals only, and Ctrl-C
+# returns from the function rather than aborting the rest of this file -- the
+# same two guards the mirror prompt below carries, for the same reasons.
 _settings_sync_check() {
+    [[ -o interactive && -t 0 ]] || return 0
+    setopt localtraps
+    trap 'return 1' INT
     local sync_dir="$HOME/Documents/Projects/system_settings"
     local stamp="$sync_dir/.last_sync"
     local now=$(date +%s)
@@ -187,18 +205,12 @@ _settings_sync_check() {
 
     if [[ ! -f "$stamp" ]] || (( now - $(cat "$stamp") > week )); then
         echo "\n\033[1;33m[system_settings]\033[0m Last sync was over a week ago."
-        echo -n "Run sync now? [y/N] "
-        read -r -k 1 answer
-        [[ "$answer" != $'\n' ]] && echo
-        if [[ "$answer" =~ [yY] ]]; then
+        if _ask_yn "Run sync now? [y/N] "; then
             "$sync_dir/sync.sh"
             # Check if there are changes to commit
             if [[ -n "$(git -C "$sync_dir" status --porcelain)" ]]; then
                 echo ""
-                echo -n "Changes detected. Commit and push? [y/N] "
-                read -r -k 1 answer2
-                [[ "$answer2" != $'\n' ]] && echo
-                if [[ "$answer2" =~ [yY] ]]; then
+                if _ask_yn "Changes detected. Commit and push? [y/N] "; then
                     git -C "$sync_dir" add -A
                     git -C "$sync_dir" commit -m "Auto-sync $(date +%Y-%m-%d)"
                     git -C "$sync_dir" push
@@ -227,7 +239,7 @@ _mirror_rerank_check() {
     setopt localtraps
     trap 'return 1' INT
     local bin="${MIRROR_RERANK_BIN:-$HOME/.config/i3/scripts/mirror-rerank}"
-    local reasons rc answer discard
+    local reasons rc
     reasons="$("$bin" status 2>/dev/null)"
     rc=$?
     case $rc in
@@ -240,13 +252,7 @@ _mirror_rerank_check() {
     esac
     echo "\n\033[1;33m[mirrors]\033[0m A mirror re-rank is due:"
     print -r -- "$reasons"
-    # Discard anything typed while the terminal was starting up, so a command
-    # that happens to begin with y is not taken as the answer.
-    while read -t -k 1 -s discard; do :; done
-    echo -n "Update mirrors now? [y/N] "
-    read -r -k 1 answer
-    [[ "$answer" != $'\n' ]] && echo
-    if [[ "$answer" =~ [yY] ]]; then
+    if _ask_yn "Update mirrors now? [y/N] "; then
         "$bin" run
     fi
 }

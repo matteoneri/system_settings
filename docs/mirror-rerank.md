@@ -44,25 +44,34 @@ script directly:
 
 ## What `y` runs, and what it costs
 
-1. `reflector --protocol https --age 12 --latest 60 --sort rate --number 20`,
+1. `sudo -v` — your password is asked **first**, right after the lock, while
+   you are still at the keyboard. A refusal stops the run before anything is
+   downloaded. The cached credential is what the installs below use; if the
+   rate test outlasts sudo's cache (five minutes by default) the install will
+   ask once more.
+2. `reflector --protocol https --age 12 --latest 60 --sort rate --number 20`,
    as your user, into a private temporary directory. It keeps the sixty most
    recently synced mirrors (synced within twelve **hours** — `--age` is hours)
    and rate-tests all sixty from where you are, keeping the fastest twenty.
    Rating downloads each mirror's full `extra.db` (~8.9MB here), one mirror at
    a time, so a run is up to ~530MB and 5-10 minutes with the terminal blocked.
-2. The result is refused unless every server line is `https://`, there are at
-   least ten of them, and at least one mirror was actually rated. A link that
-   serves reflector's status file but times out every download otherwise
-   produces twenty arbitrarily-ordered mirrors and a clean exit.
-3. Two `sudo install` calls, argv-form, never a shell string: the live list to
+3. The result is refused unless every server line is `https://`, there are at
+   least ten of them, and at least **ten** mirrors were actually rated. A link
+   that serves reflector's status file but times out most downloads otherwise
+   produces a list that is mostly unranked with a clean exit; on such a link the
+   flag stays armed until you reach a better one, which is the point.
+4. Two `sudo install` calls, argv-form, never a shell string: the live list to
    `/etc/pacman.d/mirrorlist.bak`, then the new list into place as `root:root
-   0644`. This is where the password prompt appears — after the rate test.
-4. `eos-rankmirrors`, which ranks the EndeavourOS list and escalates by itself
-   (it will ask for the password again if sudo's cache has expired). Its exit
-   status cannot report a failed write, so success is judged by the file: the
-   mirrorlist's modification time advanced, or the tool said the ranking was
-   already current, and it never printed `Failed.`.
-5. The zone and time are recorded.
+   0644`.
+5. `eos-rankmirrors`, which ranks the EndeavourOS list and escalates by itself.
+   Its exit status cannot report a failed write, so success is judged by the
+   file: the mirrorlist's modification time advanced, or the tool said the
+   ranking was already current, and it never printed `Failed.`.
+6. The zone and time are recorded.
+
+If any step after the rate test fails, the flag stays armed and the next `y`
+repeats the download. Asking for the password first removes the commonest cause
+of that; the remaining one is `eos-rankmirrors` failing on its own.
 
 A second terminal that answers `y` while a run is in progress says so and does
 nothing; one that answers `y` after the run finished finds the state fresh and

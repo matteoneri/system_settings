@@ -6,13 +6,14 @@
 #   (no arg) | status   Print why a re-rank is due, one reason per line, then the
 #                       cost of accepting. Exit 0 when due, 1 when the ranking is
 #                       still fresh, 2 when the live zone cannot be read.
-#   run                 Rate-test a fresh pool of Arch mirrors and install the
-#                       fastest, then rank the EndeavourOS list, then record the
-#                       zone and time. Exit 0 on success, 1 when either ranking
-#                       failed or another run holds the lock, 2 on a setup error.
-#                       When the ranking is already fresh, says so on stderr and
-#                       exits 0 without ranking. Only a full success writes the
-#                       state.
+#   run                 Ask for the sudo password first, then rate-test a fresh
+#                       pool of Arch mirrors and install the fastest, then rank
+#                       the EndeavourOS list, then record the zone and time.
+#                       Exit 0 on success, 1 when the password was refused,
+#                       either ranking failed, or another run holds the lock, 2
+#                       on a setup error. When the ranking is already fresh,
+#                       says so on stderr and exits 0 without asking for
+#                       anything. Only a full success writes the state.
 #
 # A re-rank is due when the recorded timezone differs from the live one, or the
 # recorded ranking is older than MAX_AGE_DAYS. Only a successful run writes the
@@ -47,6 +48,11 @@ POOL=60
 KEEP=20
 # A list this short did not come from a working rate test.
 MIN_SERVERS=10
+# And a rate test where fewer than this many mirrors actually completed a
+# download did not rank the list: one rated mirror followed by nineteen that
+# timed out sorts in arbitrary order behind the first. On such a link the flag
+# stays armed until a better one is reached, which is the point.
+MIN_RATED=10
 
 # Stated by the prompt before the user answers. Sixty mirrors at ~8.9MB each,
 # rated serially: keep this honest against the reflector command in run.
@@ -145,10 +151,9 @@ runtime_dir() {
 
 # validate_mirrorlist <list> <reflector-log>  ->  0 when the list is safe to install.
 # Shape alone is not enough. A link that serves reflector's status file but
-# times out every database download yields twenty https lines in arbitrary
-# order and a zero exit: a failed rate is logged as 0.00 KiB/s and the sort
-# proceeds on zeros. So the gate also requires that at least one mirror was
-# actually rated.
+# times out downloads yields https lines in arbitrary order and a zero exit: a
+# failed rate is logged as 0.00 KiB/s and the sort proceeds on zeros. So the
+# gate also requires that enough mirrors were actually rated.
 validate_mirrorlist() {
     local list="$1" log="$2"
     local servers
@@ -166,10 +171,11 @@ validate_mirrorlist() {
     # (sixty rated mirrors is), and the pipeline's 141 would read as "no mirror
     # rated" and reject a good list after a ten-minute download. A count reads
     # every line.
-    local rated
+    local total rated
+    total="$(grep -c ' KiB/s ' -- "$log")" || total=0
     rated="$(grep -E ' KiB/s ' -- "$log" | grep -cvE ' +0\.00 KiB/s')" || rated=0
-    if (( rated < 1 )); then
-        printf 'mirror-rerank: no mirror could be rated, so the list is unranked. Not installing.\n' >&2
+    if (( rated < MIN_RATED )); then
+        printf 'mirror-rerank: only %s of %s mirrors could be rated, so the list is mostly unranked. Not installing.\n' "$rated" "$total" >&2
         return 1
     fi
 }
@@ -243,11 +249,12 @@ acquire_lock() {
     fi
 }
 
-# prepare_run  ->  lock taken, zone read into RUN_ZONE, still due, RUN_TMP made.
-# 0 to proceed; 1 when another run holds the lock; 2 on a setup error. Exits 0
-# when the state is already fresh: another terminal may have finished while
-# this one sat at its prompt, and there is nothing to do -- said on stderr so a
-# manual `run` is not mistaken for a re-rank.
+# prepare_run  ->  lock taken, zone read into RUN_ZONE, still due, password
+# cached, RUN_TMP made. 0 to proceed; 1 when another run holds the lock or the
+# password was refused; 2 on a setup error. Exits 0 when the state is already
+# fresh: another terminal may have finished while this one sat at its prompt,
+# and there is nothing to do -- said on stderr so a manual `run` is not mistaken
+# for a re-rank, and before any password is asked.
 prepare_run() {
     acquire_lock || return "$?"
     if ! RUN_ZONE="$(live_zone)"; then
@@ -265,6 +272,15 @@ prepare_run() {
             return 2
             ;;
     esac
+    # The password first, while the user is still at the keyboard: the installs
+    # below need it only after a 5-10 minute download, and a prompt that lands
+    # then is easy to miss or refuse -- which would cost the whole download
+    # again. A refusal here costs nothing. The installs use the cached credential
+    # and ask again only if the rate test outlasts sudo's cache.
+    if ! "$SUDO" -v 9>&-; then
+        printf 'mirror-rerank: sudo authentication was refused; nothing downloaded\n' >&2
+        return 1
+    fi
     RUN_TMP="$(mktemp -d -- "$RUN_DIR/mirror-rerank.XXXXXX")" || return 2
     trap 'rm -rf -- "$RUN_TMP"' EXIT
 }

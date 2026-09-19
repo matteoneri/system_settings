@@ -3,47 +3,34 @@
 From the `ce-code-review` pass on this branch (correctness, security, adversarial,
 testing, maintainability, reliability; validated independently) plus the
 `ce-simplify-code` pass. Every actionable finding was applied and is covered by
-`tests/mirror-rerank.sh`. These are the items deliberately **not** applied, with
-the reason, and the limitations recorded rather than fixed. No tracker is
+`tests/mirror-rerank.sh`. These are the items that were left to the owner, what
+was decided, and the limitations recorded rather than fixed. No tracker is
 configured for this repo, so this file is the durable record. Run artifact:
 `/tmp/compound-engineering-1000/ce-code-review/20260918-3281413-mirrors/`.
 
-## Decisions pending (owner's call, not applied)
+## Decided by the owner on 2026-09-19, and applied
 
-- **P2 — the rated gate accepts a list where one mirror rated and nineteen timed
-  out.** The rated mirror sorts first and pacman tries mirrors in order, so the
-  installed list works, but its fallbacks are unrated. Raising the floor to
-  `MIN_SERVERS` (10) rated mirrors would keep the flag armed on poor links until
-  a good one is reached — the plan's F1 intent — at the cost of never clearing on
-  a marginal connection. KTD7 as approved says "at least one". Left at one.
-- **P2 — any failure after the rate test repeats the full ~530MB download.** A
-  refused or expired sudo password (the prompt lands 5-10 minutes after `y`) or
-  an `eos-rankmirrors` failure leaves the flag armed and the next accept re-rates
-  all sixty mirrors, discarding a validated list. Two design changes are on the
-  table: `sudo -v` right after the lock so the password prompt lands while the
-  user is present (sudo's cached credential may still expire during a long rate
-  test), or keeping the validated list next to the state file and reusing one
-  younger than an hour. The plan accepts the post-rate-test prompt as written.
-
-## Pre-existing, adjacent (out of this plan's scope)
-
-- **P1 — `_settings_sync_check` has no interactive/TTY guard.** The weekly sync
-  prompt directly above the new hook (`home/.zshrc`, since 2026-02-28) blocks on
-  `read -r -k 1` in any shell that sources `.zshrc` once `.last_sync` is a week
-  old — the exact hazard the new hook guards against with
-  `[[ -o interactive && -t 0 ]] || return 0`, and it shares the Ctrl-C exposure
-  the new hook now traps. The same one-line guard (and the same `localtraps`
-  trap) belongs there, as its own commit; the plan excludes the sync check from
-  scope.
+- **P2 — the rated gate accepted a list where one mirror rated and nineteen
+  timed out.** Decided: raise the floor. `validate_mirrorlist` now requires at
+  least `MIN_RATED` (10) mirrors rated at a non-zero rate, not one. On a poor
+  link the flag stays armed until a better one is reached, which is the plan's
+  F1 intent; the cost is that a marginal connection never clears the flag.
+- **P2 — any failure after the rate test repeated the full ~530MB download.**
+  Decided: the cheap mitigation. `run` calls `sudo -v` right after the lock and
+  the fresh re-check, so the password prompt lands while the user is present and
+  a refusal costs nothing. The remaining repeat path is an `eos-rankmirrors`
+  failure after a good Arch install; caching the validated list was not taken.
+- **P1, pre-existing — `_settings_sync_check` had no interactive/TTY guard and
+  the same Ctrl-C exposure.** Decided: fix it in this branch. It now carries the
+  same `[[ -o interactive && -t 0 ]] || return 0` guard and the same INT trap
+  as the mirror hook.
+- **P2 — extract the y/N prompt idiom, now at its third occurrence.** Applied
+  as part of the sync-check fix, the natural moment to touch that function:
+  `_ask_yn` owns the prompt, the single-key read, the type-ahead drain, and the
+  trailing newline for all three prompts.
 
 ## Declined, with reason
 
-- **P2 — extract a `_ask_yn` helper for the y/N prompt idiom in `.zshrc`.** The
-  new hook is the idiom's third occurrence, which crosses the repo's recorded
-  "extract on the third" line. Declined in this branch: two of the three call
-  sites are inside `_settings_sync_check`, which is untested and outside the
-  scope of the simplification pass. Extract when that function is next touched
-  (the guard above is the natural moment).
 - **P3 — `live_zone` should set a global instead of printing, saving one fork per
   terminal.** Declined: one subshell on the status path is not worth a less clear
   contract; `EPOCHSECONDS` already removed the `date` fork that mattered.
