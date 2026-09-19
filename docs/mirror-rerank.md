@@ -55,6 +55,13 @@ script directly:
    and rate-tests all sixty from where you are, keeping the fastest twenty.
    Rating downloads each mirror's full `extra.db` (~8.9MB here), one mirror at
    a time, so a run is up to ~530MB and 5-10 minutes with the terminal blocked.
+   Each mirror's measured rate is printed as it is tested, so the wait shows
+   its work instead of looking like a hang:
+
+   ```
+   [2026-09-19 17:58:45] INFO: https://mirror.example/archlinux/   8421.73 KiB/s     1.06 s
+   [2026-09-19 17:58:47] INFO: https://other.example/archlinux/     412.06 KiB/s    21.58 s
+   ```
 3. The result is refused unless every server line is `https://`, there are at
    least ten of them, and at least **ten** mirrors were actually rated. A link
    that serves reflector's status file but times out most downloads otherwise

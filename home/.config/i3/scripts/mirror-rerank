@@ -9,6 +9,8 @@
 #   run                 Ask for the sudo password first, then rate-test a fresh
 #                       pool of Arch mirrors and install the fastest, then rank
 #                       the EndeavourOS list, then record the zone and time.
+#                       Both tools' progress is shown as it happens -- the rate
+#                       test is minutes long, so silence would read as a hang.
 #                       Exit 0 on success, 1 when the password was refused,
 #                       either ranking failed, or another run holds the lock, 2
 #                       on a setup error. When the ranking is already fresh,
@@ -287,9 +289,15 @@ prepare_run() {
 
 # install_arch_mirrorlist  ->  rate-test as the user, gate, back up, install as root.
 install_arch_mirrorlist() {
-    printf 'Rating Arch mirrors: %s tested, the fastest %s kept. This takes a while.\n' "$POOL" "$KEEP"
+    printf 'Rating Arch mirrors: %s tested, the fastest %s kept, one at a time.\n' "$POOL" "$KEEP"
+    # reflector writes its --verbose progress -- one line per mirror, with the
+    # measured rate -- to stderr. tee rather than a plain redirect: the gate
+    # below parses the log, and a 5-10 minute wait with nothing on screen is
+    # indistinguishable from a hang. tee reads to EOF, so it cannot SIGPIPE the
+    # writer the way an early-exiting reader would.
     if ! "$REFLECTOR" --protocol https --age 12 --latest "$POOL" --sort rate --number "$KEEP" \
-            --verbose --save "$RUN_TMP/mirrorlist" 2>"$RUN_TMP/reflector.log" 9>&-; then
+            --verbose --save "$RUN_TMP/mirrorlist" 2>&1 9>&- \
+            | tee -- "$RUN_TMP/reflector.log" 9>&-; then
         fail_with_log 'reflector failed' "$RUN_TMP/reflector.log"
         return 1
     fi
@@ -313,7 +321,11 @@ rank_endeavouros() {
     printf 'Ranking EndeavourOS mirrors.\n'
     local before
     before="$(stat -c %y -- "$EOS_MIRRORLIST" 2>/dev/null)"
-    if ! "$EOS_RANKMIRRORS" 2>"$RUN_TMP/eos.log" 9>&-; then
+    # Same reasoning, and the same tee: eos-rankmirrors routes every
+    # user-facing message through echo2 to stderr, so a plain redirect would
+    # leave only its ranked-list dump on screen and any password prompt
+    # unexplained.
+    if ! "$EOS_RANKMIRRORS" 2>&1 9>&- | tee -- "$RUN_TMP/eos.log" 9>&-; then
         fail_with_log 'eos-rankmirrors failed' "$RUN_TMP/eos.log"
         return 1
     fi
