@@ -225,8 +225,10 @@ STUB
 # sudo: record argv and a call count; fail every call when STUB_SUDO_FAIL is
 # set, or only the Nth call when STUB_SUDO_FAIL_ON=N. The script's calls, in
 # order, are: 1 `sudo -v` (the up-front password), 2 the backup install, 3 the
-# live install. `-v` succeeds silently; `install <opts> -- src dst` is emulated
-# as a plain copy so the suite can inspect what landed without being root.
+# live install, then one `rm` per superseded .pacnew. `-v` succeeds silently;
+# `install <opts> -- src dst` is emulated as a plain copy and `rm -f -- path`
+# as a plain remove, so the suite can inspect both what landed and what was
+# discarded without being root.
 cat > "$STUBBIN/sudo" <<'STUB'
 #!/bin/bash
 printf '%s\n' "$*" >> "$SUDO_LOG"
@@ -239,6 +241,12 @@ if [[ "$1" == install ]]; then
     while (( $# )) && [[ "$1" != -- ]]; do shift; done
     [[ "$1" == -- ]] && shift
     cp -- "$1" "$2"
+    exit $?
+fi
+if [[ "$1" == rm ]]; then
+    while (( $# )) && [[ "$1" != -- ]]; do shift; done
+    [[ "$1" == -- ]] && shift
+    rm -f -- "$@"
     exit $?
 fi
 exit 0
@@ -299,6 +307,12 @@ EOS_OFFLINE_MIRROR="Failed to connect, the mirror may be currently offline."
 reset_run() {
     printf '# old arch list\nServer = https://old.example/$repo/os/$arch\n' > "$MIRROR_RERANK_MIRRORLIST"
     printf '# old eos list\nServer = https://old-eos.example/$repo/$arch\n' > "$MIRROR_RERANK_EOS_MIRRORLIST"
+    # Both lists are pacman backup files we keep modified, so every upgrade of
+    # their packages leaves a .pacnew behind: a run starts with one waiting for
+    # each. The third belongs to another package and must survive untouched.
+    printf '# upstream arch list\n' > "$MIRROR_RERANK_MIRRORLIST.pacnew"
+    printf '# upstream eos list\n'  > "$MIRROR_RERANK_EOS_MIRRORLIST.pacnew"
+    printf '# someone else\n'       > "$SCRATCH/etc/pacman.conf.pacnew"
     rm -f "$MIRROR_RERANK_MIRRORLIST.bak" "$SUDO_LOG" "$SUDO_CALLS" "$REFLECTOR_ARGS" "$EOS_CALLS"
     write_state Asia/Dubai $((NOW - 31 * DAY))
     export STUB_TZ=Asia/Dubai
@@ -310,6 +324,9 @@ state_ranked_at_is()  { grep -qx "ranked_at=$1" "$MIRROR_RERANK_STATE"; }
 live_list_is_old()    { grep -q 'old.example' "$MIRROR_RERANK_MIRRORLIST"; }
 no_temp_left()        { [[ -z "$(find "$XDG_RUNTIME_DIR" -maxdepth 1 -name 'mirror-rerank.*' -type d)" ]]; }
 no_install_attempted() { ! grep -q '^install ' "$SUDO_LOG" 2>/dev/null; }
+both_pacnew_gone()     { [[ ! -e "$MIRROR_RERANK_MIRRORLIST.pacnew" && ! -e "$MIRROR_RERANK_EOS_MIRRORLIST.pacnew" ]]; }
+both_pacnew_present()  { [[ -e "$MIRROR_RERANK_MIRRORLIST.pacnew" && -e "$MIRROR_RERANK_EOS_MIRRORLIST.pacnew" ]]; }
+foreign_pacnew_kept()  { [[ -e "$SCRATCH/etc/pacman.conf.pacnew" ]]; }
 STALE=$((NOW - 31 * DAY))
 
 echo "== run: both rankings succeed and the state records zone and time =="
@@ -525,6 +542,60 @@ export STUB_EOS_EXIT=1
 assert_exit "run exits non-zero when eos-rankmirrors dies" 1 bash "$SCRIPT" run
 assert_true "state unchanged after eos-rankmirrors died"    state_ranked_at_is "$STALE"
 
+echo "== run: a successful run discards the .pacnew files it has just superseded =="
+# Both lists are pacman `backup` files this feature keeps permanently modified,
+# so every upgrade of their packages leaves a .pacnew -- forever, by design.
+# Neither holds a mirror the run did not already consider, and the EndeavourOS
+# one is worse than noise: EndeavourOS's own hook overwrites it with an older
+# ranking that pacdiff would then offer to install over what this run wrote.
+reset_run
+assert_exit "run still exits 0"                                 0 bash "$SCRIPT" run
+assert_true "the superseded Arch .pacnew is gone"               test ! -e "$MIRROR_RERANK_MIRRORLIST.pacnew"
+assert_true "the superseded EndeavourOS .pacnew is gone"        test ! -e "$MIRROR_RERANK_EOS_MIRRORLIST.pacnew"
+assert_true "another package's .pacnew is left alone"           foreign_pacnew_kept
+assert_true "the live Arch list itself survives"                test -s "$MIRROR_RERANK_MIRRORLIST"
+assert_true "the live EndeavourOS list itself survives"         test -s "$MIRROR_RERANK_EOS_MIRRORLIST"
+assert_true "the .bak of the previous Arch list survives"       test -s "$MIRROR_RERANK_MIRRORLIST.bak"
+assert_true "the removal is argv-form rm through sudo"          grep -qx "rm -f -- $MIRROR_RERANK_MIRRORLIST.pacnew" "$SUDO_LOG"
+reset_run
+assert_contains "the run says what it discarded" ".pacnew" bash "$SCRIPT" run
+
+echo "== run: a failed run leaves both .pacnew files for the next attempt =="
+# Discarding is only safe once this run has actually replaced both lists.
+reset_run
+export STUB_REFLECTOR_EXIT=1
+assert_exit "a failed rate test still fails"                    1 bash "$SCRIPT" run
+assert_true "both .pacnew files survive a failed rate test"     both_pacnew_present
+reset_run
+export STUB_REFLECTOR_OUT="$FX/truncated.list"
+assert_exit "a rejected list still fails"                       1 bash "$SCRIPT" run
+assert_true "both .pacnew files survive a rejected list"        both_pacnew_present
+reset_run
+export STUB_EOS_EXIT=1
+assert_exit "a failed EndeavourOS ranking still fails"          1 bash "$SCRIPT" run
+assert_true "both .pacnew files survive a failed EOS ranking"   both_pacnew_present
+
+echo "== run: a .pacnew that cannot be removed warns but does not fail the run =="
+# The ranking already cost a 5-10 minute download. A cleanup failure must not
+# withhold the state and charge for the whole thing again at the next terminal.
+reset_run
+export STUB_SUDO_FAIL_ON=4
+assert_exit "the run still exits 0 when a .pacnew cannot be removed" 0 bash "$SCRIPT" run
+assert_true "the state is still written"                             state_ranked_at_is "$NOW"
+reset_run
+export STUB_SUDO_FAIL_ON=4
+assert_err_contains "the failure names the consequence" "pacdiff" bash "$SCRIPT" run
+unset STUB_SUDO_FAIL_ON
+
+echo "== run: no .pacnew waiting is not an error =="
+reset_run
+rm -f "$MIRROR_RERANK_MIRRORLIST.pacnew" "$MIRROR_RERANK_EOS_MIRRORLIST.pacnew"
+assert_exit         "run exits 0 with nothing to discard"     0 bash "$SCRIPT" run
+reset_run
+rm -f "$MIRROR_RERANK_MIRRORLIST.pacnew" "$MIRROR_RERANK_EOS_MIRRORLIST.pacnew"
+assert_not_contains "no removal is claimed"      "Removed"    bash "$SCRIPT" run
+assert_true         "an absent .pacnew is not created"        test ! -e "$MIRROR_RERANK_MIRRORLIST.pacnew"
+
 echo "== run: a held lock is reported and nothing is written =="
 reset_run
 exec 8>"$MIRROR_RERANK_LOCK"
@@ -557,6 +628,7 @@ assert_err_contains "run tells the operator the ranking is fresh" "fresh" bash "
 assert_false        "reflector was not invoked when already fresh" test -e "$REFLECTOR_ARGS"
 assert_false        "no password was asked when already fresh"     test -e "$SUDO_LOG"
 assert_true         "state unchanged when already fresh"           state_ranked_at_is $((NOW - 1 * DAY))
+assert_true         "nothing is discarded when already fresh"      both_pacnew_present
 
 echo "== run: with no runtime dir, a planted fallback parent refuses to start =="
 reset_run

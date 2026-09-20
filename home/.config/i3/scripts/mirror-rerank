@@ -8,7 +8,8 @@
 #                       still fresh, 2 when the live zone cannot be read.
 #   run                 Ask for the sudo password first, then rate-test a fresh
 #                       pool of Arch mirrors and install the fastest, then rank
-#                       the EndeavourOS list, then record the zone and time.
+#                       the EndeavourOS list, then record the zone and time, and
+#                       discard the .pacnew files the new lists supersede.
 #                       Both tools' progress is shown as it happens -- the rate
 #                       test is minutes long, so silence would read as a hang.
 #                       Exit 0 on success, 1 when the password was refused,
@@ -335,11 +336,48 @@ rank_endeavouros() {
     fi
 }
 
+# discard_superseded_pacnew  ->  remove the .pacnew files this run has just
+# superseded. Best-effort: a failure here never changes the run's exit status.
+#
+# Both mirrorlists are pacman `backup` files that this feature keeps modified,
+# so every upgrade of pacman-mirrorlist or endeavouros-mirrorlist lands in
+# pacman's "original=X, current=Y, new=Z" case and leaves a .pacnew -- for as
+# long as the feature works, not once (pacman(8), HANDLING CONFIG FILES). Left
+# to accumulate they are permanent pacdiff noise sitting next to entries that
+# do need an answer, which is how a real one gets skipped.
+#
+# The EndeavourOS one is worse than noise. EndeavourOS's own pacman hook runs
+# eos-rankmirrors --hook-rank, which writes its ranked output over that same
+# path, so what pacdiff offers as the upstream file is actually an older
+# ranking -- measured wherever the machine happened to be at the time.
+# Accepting it would silently undo the ranking this run just paid for.
+#
+# Discarding them loses nothing: reflector builds its pool from the Arch mirror
+# status JSON, and eos-rankmirrors downloads the newest endeavouros-mirrorlist
+# package itself, so neither file holds a mirror this run did not consider.
+# Pacman writes a fresh one at the next upgrade of either package.
+discard_superseded_pacnew() {
+    local list
+    for list in "$MIRRORLIST" "$EOS_MIRRORLIST"; do
+        [ -e "$list.pacnew" ] || continue
+        if "$SUDO" rm -f -- "$list.pacnew" 9>&-; then
+            printf 'Removed %s.pacnew, superseded by this ranking.\n' "$list"
+        else
+            printf 'mirror-rerank: could not remove %s.pacnew; pacdiff will keep\n' "$list" >&2
+            printf '  offering it, and accepting it would undo this ranking.\n' >&2
+        fi
+    done
+}
+
 run() {
     prepare_run || return "$?"
     install_arch_mirrorlist || return 1
     rank_endeavouros || return 1
     write_state "$RUN_ZONE" || return 2
+    # After the state and outside its guard: both lists are already replaced,
+    # so a cleanup that fails must not withhold the state and charge the user
+    # another 5-10 minute download at the next terminal.
+    discard_superseded_pacnew
     printf 'Mirrors ranked under %s.\n' "$RUN_ZONE"
 }
 

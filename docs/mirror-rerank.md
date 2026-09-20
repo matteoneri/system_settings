@@ -75,14 +75,48 @@ script directly:
    file: the mirrorlist's modification time advanced, or the tool said the
    ranking was already current, and it never printed `Failed.`.
 6. The zone and time are recorded.
+7. The two `.pacnew` files the new lists supersede are removed —
+   `/etc/pacman.d/mirrorlist.pacnew` and
+   `/etc/pacman.d/endeavouros-mirrorlist.pacnew`, those two paths only. See
+   below for why. This step runs after the state is written and cannot fail the
+   run: a removal that does not work warns and leaves the ranking recorded,
+   because the download is already paid for.
 
-If any step after the rate test fails, the flag stays armed and the next `y`
+If any step through the zone record fails, the flag stays armed and the next `y`
 repeats the download. Asking for the password first removes the commonest cause
 of that; the remaining one is `eos-rankmirrors` failing on its own.
 
 A second terminal that answers `y` while a run is in progress says so and does
 nothing; one that answers `y` after the run finished finds the state fresh and
 exits quietly.
+
+## Why the `.pacnew` files are discarded
+
+Both mirrorlists are listed in their packages' `backup` array, and this feature
+keeps both permanently modified. So on every upgrade of `pacman-mirrorlist` or
+`endeavouros-mirrorlist`, pacman hits the case where the original, the current
+and the incoming file all differ, and by the rules in `pacman(8)` (*HANDLING
+CONFIG FILES*) it installs the new one alongside as `.pacnew` and warns. That is
+not a one-off to clear: it recurs for as long as the feature does its job.
+
+Left alone the two accumulate as permanent `pacdiff` noise, sitting next to
+entries that do need an answer — which is how a real one gets skipped.
+
+The EndeavourOS one is worse than noise. EndeavourOS ships its own pacman hook
+that runs `eos-rankmirrors --hook-rank`, and that mode writes its ranked output
+over `/etc/pacman.d/endeavouros-mirrorlist.pacnew` — the same path. So what
+`pacdiff` presents as "the file upstream ships" is actually an older ranking,
+measured wherever the machine happened to be at the time. Accepting it is one
+keystroke, and it silently replaces the list the run just measured here.
+
+Nothing is lost by discarding either file. `reflector` builds its pool from the
+Arch mirror status JSON, not from the on-disk list, and the Arch `.pacnew` is
+the stock all-commented file. `eos-rankmirrors` downloads the newest
+`endeavouros-mirrorlist` package itself and ranks that, so it already has
+whatever the EndeavourOS `.pacnew` would have contributed — confirmed on
+2026-09-19, when a run produced a list whose mirror set was identical to the
+waiting `.pacnew`, differing only in order. Pacman writes a fresh `.pacnew` at
+the next upgrade of either package.
 
 ## What it does not do
 
