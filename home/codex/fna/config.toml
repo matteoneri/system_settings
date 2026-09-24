@@ -4,7 +4,7 @@
 # on purpose — an FNA session may need to read an OWN worktree and vice versa.
 
 model = "gpt-6-astra"
-model_reasoning_effort = "max"
+model_reasoning_effort = "xhigh"
 approval_policy = "never"
 default_permissions = "all-worktrees"
 service_tier = "default"

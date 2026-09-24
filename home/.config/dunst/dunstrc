@@ -89,7 +89,7 @@
     frame_width = 2
 
     # Defines color of the frame around the notification window.
-    frame_color = "#61afef"
+    frame_color = "#FFB347"
 
     # Define a color for the separator.
     # possible values are:
@@ -292,7 +292,7 @@
 [urgency_low]
     # IMPORTANT: colors have to be defined in quotation marks.
     # Otherwise the "#" and following would be interpreted as a comment.
-    background = "#1e2430"
+    background = "#1a1d30"
     foreground = "#abb2bf"
     frame_color = "#98c379"
     timeout = 5
@@ -300,15 +300,15 @@
     icon = /usr/share/icons/Arc-X-D/status/16/dialog-information.png
 
 [urgency_normal]
-    background = "#1e2430"
+    background = "#1a1d30"
     foreground = "#abb2bf"
-    frame_color = "#61afef"
+    frame_color = "#FFB347"
     timeout = 5
     # Icon for notifications with normal urgency, uncomment to enable
     icon = /usr/share/icons/Arc-X-D/status/16/dialog-question.png
 
 [urgency_critical]
-    background = "#1e2430"
+    background = "#1a1d30"
     foreground = "#abb2bf"
     frame_color = "#e06c75"
     timeout = 120
