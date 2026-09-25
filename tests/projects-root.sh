@@ -7,7 +7,9 @@
 # lib/projects-root.sh, each case in a fresh bash that sources it, so no state
 # leaks between cases. HOME points into a mktemp scratch and PROJECTS_ROOT is
 # unset first, so the machine's own value and config are never read or written.
-# The conversion sections check the tracked files in the working tree.
+# The conversion sections check the tracked files in the working tree. The
+# sync sections run a copy of sync.sh in scratch repositories and scratch homes;
+# they never touch this worktree's git state or the machine's own config.
 #
 # Run: bash tests/projects-root.sh
 
@@ -448,6 +450,264 @@ else
     fail "the repo copy of protect-credentials.test.sh passes (status $RC)"
     grep -E 'FAIL|passed=' <<<"$OUT" | sed 's/^/      | /'
 fi
+
+# ── sync: sync.sh stages every output, swaps the root back, stops on a leak ──
+# Each case runs sync.sh from a plain copy of the repo files it reads and
+# writes, committed in a fresh git repository at <root>/system_settings. It is
+# never a copy of this worktree, whose .git file points at the real gitdir. HOME
+# is a scratch home seeded as a machine restored with that root would be; every
+# live source it lacks is skipped. Stubs first on PATH stand in for pacman and
+# log mktemp calls, and a private TMPDIR holds the staging mirror. The machine's
+# own /etc and /usr/local/bin files are read, never written.
+SY="$SCRATCH/sync"
+STUBS="$SY/stubs"
+mkdir -p "$STUBS" "$SY/tmp"
+cat > "$STUBS/pacman" <<'EOF'
+#!/bin/sh
+# Lists that differ from the fixture's, so a sync that reaches the repo changes them.
+case "$1" in
+    -Qe) printf 'zsh\nbash\nparu-bin\n' ;;
+    -Qm) printf 'paru-bin\n' ;;
+    *) echo "pacman stub: unexpected arguments: $*" >&2; exit 1 ;;
+esac
+EOF
+cat > "$STUBS/mktemp" <<EOF
+#!/bin/sh
+# Log each call, so a case can tell whether sync got as far as staging.
+echo "\$*" >> "$SY/mktemp.log"
+exec "$(command -v mktemp)" "\$@"
+EOF
+chmod +x "$STUBS/pacman" "$STUBS/mktemp"
+
+# sgit <repo> <git args...>: git in a scratch repo, blind to the machine's git config.
+sgit() {
+    local repo="$1"; shift
+    GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -C "$repo" \
+        -c user.name=sync-test -c user.email=sync-test -c commit.gpgsign=false "$@"
+}
+
+# make_repo <root>: commit <root>/system_settings as a plain copy of sync.sh,
+# lib/ and the trees sync writes. The package lists and the etc/ and usr/
+# copies hold fixture text, so a sync that reaches the repo changes them.
+make_repo() {
+    local repo="$1/system_settings" f
+    mkdir -p "$repo"
+    cp -R "$REPO_ROOT/sync.sh" "$REPO_ROOT/lib" "$REPO_ROOT/home" "$REPO_ROOT/etc" "$REPO_ROOT/usr" "$repo/"
+    for f in explicit aur official; do printf 'fixture\n' > "$repo/packages-$f.txt"; done
+    while IFS= read -r -d '' f; do
+        printf 'fixture %s\n' "${f#"$repo"/}" > "$f"
+    done < <(find "$repo/etc" "$repo/usr" -type f -print0)
+    sgit "$repo" init -q && sgit "$repo" add -A && sgit "$repo" commit -qm fixture
+}
+
+# reset_repo <repo>: back to the committed fixture.
+reset_repo() { sgit "$1" reset -q --hard && sgit "$1" clean -qfdx; }
+
+# fill_to <root> <template> <dest>: install a filled copy, as restore would.
+fill_to() {
+    mkdir -p "$(dirname "$3")"
+    run_lib 'projects_root_fill "$1" "$2" "$3"' "$1" "$2" "$3"
+    (( RC == 0 )) || { fail "could not fill $2 for the sync fixture"; show; }
+}
+
+# seed_home <home> <root> <repo>: the live files of a machine restored from
+# <repo> with projects root <root>: the nine templated files filled in, the
+# credential hooks (the FNA copies, with own/ entries linking to them), the two
+# tracked fish functions, a real git identity and Claude preferences with
+# secret keys. Nothing else exists, so sync skips every other source.
+seed_home() {
+    local h="$1" root="$2" repo="$3" acct f
+    for acct in own fna; do
+        fill_to "$root" "$repo/home/claude-code/$acct/CLAUDE.md"     "$h/.claude-$acct/CLAUDE.md"
+        fill_to "$root" "$repo/home/claude-code/$acct/settings.json" "$h/.claude-$acct/settings.json"
+        fill_to "$root" "$repo/home/codex/$acct/config.toml"         "$h/.codex-$acct/config.toml"
+        fill_to "$root" "$repo/home/codex/$acct/AGENTS.md"           "$h/.codex-$acct/AGENTS.md"
+    done
+    fill_to "$root" "$repo/home/codex/shared/MEMORY.md" "$h/.codex-shared/MEMORY.md"
+    mkdir -p "$h/.claude-fna/hooks" "$h/.claude-own/hooks" "$h/.config/fish/functions"
+    for f in "$repo/home/claude-code/hooks/"*; do
+        cp -p "$f" "$h/.claude-fna/hooks/"
+        ln -sfn "$h/.claude-fna/hooks/${f##*/}" "$h/.claude-own/hooks/${f##*/}"
+    done
+    cp "$repo/home/.config/fish/functions/claude.fish" "$repo/home/.config/fish/functions/codex.fish" \
+        "$h/.config/fish/functions/"
+    sed -e 's/YOUR_NAME/Real Person/' -e 's/YOUR_EMAIL/real-person-at-host/' \
+        "$repo/home/.gitconfig" > "$h/.gitconfig"
+    jq '. + {"oauthAccount": {"accountUuid": "secret"}, "userID": "secret"}' \
+        "$repo/home/claude-code/own/preferences.json" > "$h/.claude-own/.claude.json"
+}
+
+# run_sync <repo> <home> <PROJECTS_ROOT, or "" for none exported>: run the
+# repo's sync.sh as that machine; sets OUT (stdout and stderr) and RC.
+run_sync() {
+    local envs=(HOME="$2" PATH="$STUBS:$PATH" TMPDIR="$SY/tmp" GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1)
+    [[ -n "$3" ]] && envs+=(PROJECTS_ROOT="$3")
+    : > "$SY/mktemp.log"
+    OUT="$(env -u PROJECTS_ROOT "${envs[@]}" bash "$1/sync.sh" 2>&1)"
+    RC=$?
+    ERR=""
+}
+
+expect_fail() {
+    if (( RC != 0 )); then pass "$1"; else fail "$1 (status 0, want non-zero)"; show; fi
+}
+expect_equal() {  # <desc> <got> <want>
+    if [[ "$2" == "$3" ]]; then pass "$1"; else fail "$1"; printf '      want: %q\n      got:  %q\n' "$3" "$2"; fi
+}
+# expect_clean <desc> <repo> [pathspec...]: git status shows no change there.
+expect_clean() {
+    local desc="$1" repo="$2" st
+    shift 2
+    st="$(sgit "$repo" status --porcelain --untracked-files=all -- "$@" 2>&1)"
+    if [[ -z "$st" ]]; then pass "$desc"; else fail "$desc"; sed 's/^/      | /' <<<"$st"; fi
+}
+# expect_no_staging <desc>: the private TMPDIR is empty again after a run.
+expect_no_staging() {
+    local left
+    left="$(ls -A "$SY/tmp")"
+    if [[ -z "$left" ]]; then pass "$1"; else fail "$1 (left behind: $left)"; rm -rf "${SY:?}/tmp/"*; fi
+}
+# expect_not_staged <desc>: the run never called mktemp.
+expect_not_staged() {
+    if [[ ! -s "$SY/mktemp.log" ]]; then pass "$1"; else fail "$1"; sed 's/^/      mktemp | /' "$SY/mktemp.log"; fi
+}
+expect_absent() {  # <desc> <path>
+    if [[ ! -e "$2" && ! -L "$2" ]]; then pass "$1"; else fail "$1 ($2 exists)"; fi
+}
+
+# Machine A: root with a space, outside HOME. Machine B: root at ~/Projects,
+# as on the laptop, so the ~/, $HOME/ and ${HOME}/ spellings apply too.
+ROOT_A="$SY/a b/Work";   HOME_A="$SY/home-a"; REPO_A="$ROOT_A/system_settings"
+ROOT_B="$SY/c/Projects"; HOME_B="$SY/c";      REPO_B="$ROOT_B/system_settings"
+mkdir -p "$ROOT_A" "$HOME_A" "$ROOT_B"
+make_repo "$ROOT_A"
+make_repo "$ROOT_B"
+seed_home "$HOME_A" "$ROOT_A" "$REPO_A"
+seed_home "$HOME_B" "$ROOT_B" "$REPO_B"
+
+echo "== sync: two machines with different roots leave the repo as it was (AE2) =="
+run_sync "$REPO_A" "$HOME_A" "$ROOT_A"
+expect_rc    "sync succeeds for a root with a space, outside HOME" 0
+expect_clean "... leaving home/ as committed: the templated files, hooks and fish functions byte-identical" "$REPO_A" home
+expect_lacks "... with the git identity scrubbed in staging" "Real Person" "$(cat "$REPO_A/home/.gitconfig")"
+expect_lacks "... and only the allowlisted Claude preferences kept" "oauthAccount" "$(cat "$REPO_A/home/claude-code/own/preferences.json")"
+expect_file  "... writing the package lists from pacman" "$REPO_A/packages-explicit.txt" $'bash\nparu-bin\nzsh\n'
+expect_file  "... the official list being explicit minus AUR" "$REPO_A/packages-official.txt" $'bash\nzsh\n'
+expect_has   "... reporting an absent live source (the i3 config) as skipped" "skip (absent): ~/.config/i3/config" "$OUT"
+expect_clean "... and leaving the repo's i3 config as it was" "$REPO_A" home/.config/i3/config
+expect_absent "... never copying the own/ hook links" "$REPO_A/home/claude-code/own/hooks"
+expect_no_staging "... and removing its staging mirror"
+run_sync "$REPO_B" "$HOME_B" "$ROOT_B"
+expect_rc    "sync succeeds on a second machine whose root is ~/Projects" 0
+expect_clean "... again leaving home/ as committed" "$REPO_B" home
+differ=""
+for f in "${TEMPLATED[@]}"; do cmp -s "$REPO_A/$f" "$REPO_B/$f" || differ+=" $f"; done
+if [[ -z "$differ" ]]; then pass "both machines leave the same templated bytes: no flip-flop"; else fail "the machines' templated copies differ:$differ"; fi
+
+echo "== sync: the root can come from the declaration file =="
+reset_repo "$REPO_B"
+mkdir -p "$HOME_B/.config/environment.d"
+printf 'PROJECTS_ROOT=${HOME}/Projects\n' > "$HOME_B/.config/environment.d/50-projects-root.conf"
+run_sync "$REPO_B" "$HOME_B" ""
+expect_rc    "sync resolves a declared root when none is exported" 0
+expect_clean "... and leaves home/ as committed" "$REPO_B" home
+rm "$HOME_B/.config/environment.d/50-projects-root.conf"
+
+echo "== sync: live edits reach the repo with the root swapped back (R9) =="
+reset_repo "$REPO_B"
+printf 'New: %s/ActiveProjects/OWN/new and ~/Projects/x.\n' "$ROOT_B" >> "$HOME_B/.claude-fna/CLAUDE.md"
+jq --arg d "$ROOT_B/extra" '.extraRoot = $d' "$HOME_B/.claude-own/settings.json" > "$SY/settings.tmp"
+mv "$SY/settings.tmp" "$HOME_B/.claude-own/settings.json"
+printf '\n[projects."%s/ActiveProjects/OWN/new"]\ntrust_level = "trusted"\n' "$ROOT_B" >> "$HOME_B/.codex-own/config.toml"
+printf '~/.extra-secret\n' >> "$HOME_B/.claude-fna/hooks/protected-paths.txt"
+run_sync "$REPO_B" "$HOME_B" "$ROOT_B"
+expect_rc "sync succeeds" 0
+expect_equal "an absolute and a ~/ path in CLAUDE.md both become the placeholder" \
+    "$(tail -n 1 "$REPO_B/home/claude-code/fna/CLAUDE.md")" "New: $TOKEN/ActiveProjects/OWN/new and $TOKEN/x."
+expect_equal "a path added to settings.json becomes the placeholder after the jq filter" \
+    "$(jq -r .extraRoot "$REPO_B/home/claude-code/own/settings.json")" "$TOKEN/extra"
+expect_has "a new Codex trust entry is stored with the placeholder" \
+    "[projects.\"$TOKEN/ActiveProjects/OWN/new\"]" "$(cat "$REPO_B/home/codex/own/config.toml")"
+expect_equal "a changed hook path list reaches the repo" \
+    "$(tail -n 1 "$REPO_B/home/claude-code/hooks/protected-paths.txt")" "~/.extra-secret"
+expect_equal "no file in the repo holds the machine's root" \
+    "$(grep -rlF --exclude-dir=.git -- "$ROOT_B" "$REPO_B")" ""
+reset_repo "$REPO_B"
+seed_home "$HOME_B" "$ROOT_B" "$REPO_B"
+
+echo "== sync: only the three tracked fish files are copied (KTD14) =="
+reset_repo "$REPO_A"
+mkdir -p "$HOME_A/.config/fish/conf.d"
+printf 'function extra\nend\n' > "$HOME_A/.config/fish/functions/extra.fish"
+printf '# projects-root loader\n' > "$HOME_A/.config/fish/conf.d/projects-root.fish"
+printf '# other\n' > "$HOME_A/.config/fish/conf.d/other.fish"
+run_sync "$REPO_A" "$HOME_A" "$ROOT_A"
+expect_rc     "sync succeeds" 0
+expect_file   "the fish projects-root loader is copied" "$REPO_A/home/.config/fish/conf.d/projects-root.fish" $'# projects-root loader\n'
+expect_absent "an extra fish function is not" "$REPO_A/home/.config/fish/functions/extra.fish"
+expect_absent "nor another conf.d file" "$REPO_A/home/.config/fish/conf.d/other.fish"
+rm "$HOME_A/.config/fish/functions/extra.fish" "$HOME_A/.config/fish/conf.d/other.fish" \
+    "$HOME_A/.config/fish/conf.d/projects-root.fish"
+
+echo "== sync: a leak stops the sync with the repo untouched (AE3, R10) =="
+reset_repo "$REPO_A"
+printf 'export WORK="%s/ActiveProjects"\n' "$ROOT_A" > "$HOME_A/.zshrc"
+run_sync "$REPO_A" "$HOME_A" "$ROOT_A"
+expect_fail  "a live .zshrc holding the literal root stops the sync"
+expect_has   "... naming the live .zshrc" "~/.zshrc" "$OUT"
+expect_clean "... leaving the whole repo as committed" "$REPO_A"
+expect_file  "... the package lists included" "$REPO_A/packages-explicit.txt" $'fixture\n'
+expect_clean "... and etc/ and usr/local/bin/" "$REPO_A" etc usr
+expect_no_staging "... and removing its staging mirror"
+rm "$HOME_A/.zshrc"
+printf 'See ${HOME}/Projects/notes.\n' >> "$HOME_B/.claude-fna/CLAUDE.md"
+run_sync "$REPO_B" "$HOME_B" "$ROOT_B"
+expect_fail  "a templated file holding a spelling the swap leaves (\${HOME}/) stops the sync"
+expect_has   "... naming that file" "~/.claude-fna/CLAUDE.md" "$OUT"
+expect_clean "... leaving the repo as committed" "$REPO_B"
+seed_home "$HOME_B" "$ROOT_B" "$REPO_B"
+
+echo "== sync: a live templated file restore never filled in is refused (KTD8) =="
+cp "$REPO_A/home/claude-code/own/settings.json" "$HOME_A/.claude-own/settings.json"
+run_sync "$REPO_A" "$HOME_A" "$ROOT_A"
+expect_fail  "a live settings.json still holding $TOKEN stops the sync"
+expect_has   "... naming the file" "~/.claude-own/settings.json" "$OUT"
+expect_has   "... and telling the user to run restore" "restore.sh" "$OUT"
+expect_clean "... leaving the repo as committed" "$REPO_A"
+expect_no_staging "... and removing its staging mirror"
+
+echo "== sync: the settings.json jq filter fails the run =="
+printf '{"permissions": ' > "$HOME_A/.claude-own/settings.json"
+run_sync "$REPO_A" "$HOME_A" "$ROOT_A"
+expect_fail  "invalid JSON in a live settings.json stops the sync"
+expect_has   "... naming the file" "~/.claude-own/settings.json" "$OUT"
+expect_clean "... leaving the repo, its settings.json included, as committed" "$REPO_A"
+expect_no_staging "... and removing its staging mirror"
+fill_to "$ROOT_A" "$REPO_A/home/claude-code/own/settings.json" "$HOME_A/.claude-own/settings.json"
+jq 'del(.permissions.deny)' "$HOME_A/.claude-own/settings.json" > "$SY/settings.tmp"
+mv "$SY/settings.tmp" "$HOME_A/.claude-own/settings.json"
+run_sync "$REPO_A" "$HOME_A" "$ROOT_A"
+expect_rc "a settings.json without a deny list still syncs: the filter has nothing to drop" 0
+expect_equal "... and reaches the repo" "$(jq -c '.permissions.deny' "$REPO_A/home/claude-code/own/settings.json")" "null"
+reset_repo "$REPO_A"
+seed_home "$HOME_A" "$ROOT_A" "$REPO_A"
+
+echo "== sync: an unresolved root stops before anything is staged (R4) =="
+run_sync "$REPO_A" "$HOME_A" ""
+expect_fail  "no exported and no declared root stops the sync"
+expect_has   "... naming PROJECTS_ROOT" "PROJECTS_ROOT" "$OUT"
+expect_has   "... and the declaration file" "$HOME_A/.config/environment.d/50-projects-root.conf" "$OUT"
+expect_not_staged "... before creating the staging mirror"
+expect_clean "... leaving the repo as committed" "$REPO_A"
+
+echo "== sync: a root that does not contain the repo is refused (KTD4) =="
+mkdir -p "$SY/elsewhere"
+run_sync "$REPO_A" "$HOME_A" "$SY/elsewhere"
+expect_fail  "an existing root without the repo below it stops the sync"
+expect_has   "... naming the repo" "$REPO_A" "$OUT"
+expect_has   "... and the root" "$SY/elsewhere" "$OUT"
+expect_not_staged "... before copying anything"
+expect_clean "... leaving the repo as committed" "$REPO_A"
 
 echo
 echo "Passed: $PASSED, failed: $FAILED"
