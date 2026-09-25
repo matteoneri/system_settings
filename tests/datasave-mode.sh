@@ -564,6 +564,89 @@ fi
 pkill -f "$STUBBIN/kitty" 2>/dev/null; pkill -x sleep 2>/dev/null
 bash "$STATUS" clear >/dev/null 2>&1
 
+# ---------------------------------------------------------------------------
+# The drift check. Tracked copies of files that cannot read PROJECTS_ROOT hold
+# the @PROJECTS_ROOT@ placeholder, which restore.sh fills in on install, so
+# such a copy is filled the same way before it is compared.
+# ---------------------------------------------------------------------------
+
+# shellcheck source=../lib/projects-root.sh
+source "$REPO_ROOT/lib/projects-root.sh" || fail "could not source lib/projects-root.sh"
+
+# drift_check <installed> <tracked> <label>: fail an assertion and return 1
+# when the installed file does not match the tracked copy. A copy without the
+# placeholder is compared as is, so it needs no PROJECTS_ROOT.
+drift_check() {
+    local installed="$1" tracked="$2" label="$3" root
+    projects_root_scan_placeholder "$tracked" >/dev/null 2>&1
+    if (( $? == 1 )); then
+        if ! root="$(projects_root_resolve 2>"$SCRATCH/drift-error")" \
+            || ! projects_root_fill "$root" "$tracked" "$SCRATCH/drift-filled" 2>"$SCRATCH/drift-error"; then
+            fail "cannot fill PROJECTS_ROOT into the tracked copy of $label to compare it"
+            sed 's/^/      | /' "$SCRATCH/drift-error"
+            return 1
+        fi
+        tracked="$SCRATCH/drift-filled"
+    fi
+    if ! diff -q "$installed" "$tracked" >/dev/null 2>&1; then
+        fail "tracked copy of $label differs from the installed one — run sync.sh"
+        return 1
+    fi
+    return 0
+}
+
+echo "== the drift check fills the placeholder before comparing =="
+# HOME points at an empty scratch home in every case, so only the PROJECTS_ROOT
+# a case exports can resolve, never the machine's own declaration.
+D="$SCRATCH/drift"
+mkdir -p "$D/root" "$D/home"
+printf 'a\npath = "@PROJECTS_ROOT@/x"\nc\n' > "$D/tracked"
+printf 'a\npath = "%s/x"\nc\n' "$D/root" > "$D/filled"
+printf 'a\npath = "%s/x"\nchanged\n' "$D/root" > "$D/changed"
+printf 'plain\n' > "$D/plain"
+cp "$D/plain" "$D/plain-installed"
+
+# drift_case <PROJECTS_ROOT or ""> <installed> <tracked>: run drift_check in a
+# subshell, so its assertion lands in OUT instead of the suite's count; sets RC.
+drift_case() {
+    OUT="$(
+        unset PROJECTS_ROOT
+        [[ -n "$1" ]] && export PROJECTS_ROOT="$1"
+        HOME="$D/home"
+        drift_check "$2" "$3" "the case file"
+    )"
+    RC=$?
+}
+
+drift_case "$D/root" "$D/filled" "$D/tracked"
+[[ $RC -eq 0 && -z "$OUT" ]] \
+    && pass "an installed file equal to the filled tracked copy is no drift" \
+    || fail "an installed file equal to the filled tracked copy was reported: $OUT"
+drift_case "$D/root" "$D/changed" "$D/tracked"
+[[ $RC -eq 1 && "$OUT" == *"differs from the installed one"* ]] \
+    && pass "an installed file one line away from the filled copy is drift" \
+    || fail "a one-line difference went unreported (status $RC): $OUT"
+drift_case "$D/root" "$D/tracked" "$D/tracked"
+[[ $RC -eq 1 && "$OUT" == *"differs from the installed one"* ]] \
+    && pass "an installed file that still holds the placeholder is drift" \
+    || fail "an installed copy that was never filled in went unreported (status $RC): $OUT"
+drift_case "" "$D/filled" "$D/tracked"
+[[ $RC -eq 1 && "$OUT" == *FAIL*PROJECTS_ROOT* ]] \
+    && pass "an unresolved root fails the check, naming PROJECTS_ROOT" \
+    || fail "an unresolved root did not fail the check by name (status $RC): $OUT"
+drift_case "" "$D/plain-installed" "$D/plain"
+[[ $RC -eq 0 && -z "$OUT" ]] \
+    && pass "a tracked copy without the placeholder is compared as is, with no root" \
+    || fail "a placeholder-free copy needed a root or was reported (status $RC): $OUT"
+drift_case "" "$D/changed" "$D/plain"
+[[ $RC -eq 1 && "$OUT" == *"differs from the installed one"* ]] \
+    && pass "... and a difference in it is still drift" \
+    || fail "a difference in a placeholder-free copy went unreported (status $RC): $OUT"
+drift_case "" "$D/plain-installed" "$D/missing"
+[[ $RC -eq 1 && "$OUT" == *"differs from the installed one"* ]] \
+    && pass "a missing tracked copy is drift" \
+    || fail "a missing tracked copy went unreported (status $RC): $OUT"
+
 echo "== the tracked copies match the installed ones =="
 # sync.sh copies live -> repo, so a live edit that was never synced would leave
 # the tracked copy behind. /etc files are excluded: they are backup-only and are
@@ -578,12 +661,12 @@ else
                .config/i3/scripts/newsboat-launch \
                .config/i3/scripts/eth_price \
                .config/i3/scripts/gcal-next \
+               .config/i3/scripts/project-launch \
                .config/i3/config \
                .config/polybar/config.ini \
                .config/newsboat/config.datasave; do
-        if [[ -e "$HOME/$rel" ]] && ! diff -q "$HOME/$rel" "$REPO_ROOT/home/$rel" >/dev/null 2>&1; then
-            fail "tracked copy of $rel differs from the installed one — run sync.sh"
-            drift=1
+        if [[ -e "$HOME/$rel" ]]; then
+            drift_check "$HOME/$rel" "$REPO_ROOT/home/$rel" "$rel" || drift=1
         fi
     done
     (( drift == 0 )) && pass "tracked and installed copies match"

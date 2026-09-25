@@ -19,7 +19,7 @@ belong in the repo (`ce-compound`, `ce-handoff`), not in a machine-level memory.
   before debugging anything hardware-shaped.
 - **`system_settings` is the source of truth for config.** After changing any system
   config (zshrc, i3, kitty, starship, …), run
-  `~/Documents/Projects/system_settings/sync.sh`, commit on a feature branch, and update
+  `@PROJECTS_ROOT@/system_settings/sync.sh`, commit on a feature branch, and update
   `.last_sync`. That repo follows the normal worktree rule: no direct work on `main`.
 
 ## Standing rules

@@ -7,6 +7,7 @@
 # lib/projects-root.sh, each case in a fresh bash that sources it, so no state
 # leaks between cases. HOME points into a mktemp scratch and PROJECTS_ROOT is
 # unset first, so the machine's own value and config are never read or written.
+# The conversion sections check the tracked files in the working tree.
 #
 # Run: bash tests/projects-root.sh
 
@@ -21,6 +22,7 @@ fail() { echo "  FAIL: $*"; FAILED=$((FAILED + 1)); }
 SCRATCH="$(mktemp -d)"
 trap 'rm -rf "$SCRATCH"' EXIT
 SCRATCH="$(cd "$SCRATCH" && pwd -P)"
+MACHINE_HOME="$HOME"
 export HOME="$SCRATCH/home"
 mkdir -p "$HOME"
 unset PROJECTS_ROOT
@@ -381,6 +383,71 @@ run_lib 'projects_root_scan_placeholder "$1"' "$C/empty"
 expect_rc  "an empty file passes" 0
 run_lib 'projects_root_scan_placeholder "$1"' "$C/missing"
 expect_rc  "a missing file fails closed, not clean" 2
+
+# ── conversion: the tracked files that cannot read PROJECTS_ROOT ──
+# The nine templated files hold the placeholder instead of the root, and the
+# credential hooks hold no projects path at all. These checks read only the
+# working tree, so they hold on a dirty tree too (after a sync that adds a
+# Codex trust entry, say) and never depend on what HEAD happens to contain.
+TEMPLATED=(
+    home/claude-code/own/settings.json home/claude-code/fna/settings.json
+    home/claude-code/own/CLAUDE.md     home/claude-code/fna/CLAUDE.md
+    home/codex/own/config.toml         home/codex/fna/config.toml
+    home/codex/own/AGENTS.md           home/codex/fna/AGENTS.md
+    home/codex/shared/MEMORY.md
+)
+HOOKS=home/claude-code/hooks
+HOOK_FILES=("$HOOKS/protect-credentials.sh" "$HOOKS/protect-credentials.test.sh" "$HOOKS/protected-paths.txt")
+
+count_of() { grep -oF -- "$1" | wc -l; }          # <fixed string>, text on stdin
+toml_parses() { python3 -c 'import sys, tomllib; tomllib.load(open(sys.argv[1], "rb"))' "$1"; }
+
+echo "== conversion: no literal root is left =="
+for f in "${TEMPLATED[@]}" "${HOOK_FILES[@]}"; do
+    hits="$(grep -nF -- 'Documents/Projects' "$REPO_ROOT/$f" 2>&1)"
+    if (( $? == 1 )); then
+        pass "$f names no Documents/Projects"
+    else
+        fail "$f names no Documents/Projects"; sed 's/^/      | /' <<<"$hits"
+    fi
+done
+
+echo "== conversion: every templated file carries the placeholder =="
+for f in "${TEMPLATED[@]}"; do
+    got="$(count_of "$TOKEN" < "$REPO_ROOT/$f")"
+    if (( got > 0 )); then
+        pass "$f holds $got placeholder(s)"
+    else
+        fail "$f holds no placeholder; it is templated, so it should"
+    fi
+done
+
+echo "== conversion: the converted files still parse =="
+for f in "${TEMPLATED[@]}"; do
+    case "$f" in
+        *.json) err="$(jq empty "$REPO_ROOT/$f" 2>&1)" ;;
+        *.toml) err="$(toml_parses "$REPO_ROOT/$f" 2>&1)" ;;
+        *) continue ;;
+    esac
+    if (( $? == 0 )); then pass "$f parses"; else fail "$f parses"; sed 's/^/      | /' <<<"$err"; fi
+done
+
+echo "== conversion: the credential hooks are tracked =="
+for f in "$HOOKS/protect-credentials.sh" "$HOOKS/protect-credentials.test.sh"; do
+    if [[ -f "$REPO_ROOT/$f" && -x "$REPO_ROOT/$f" ]]; then pass "$f is tracked and executable"; else fail "$f is tracked and executable"; fi
+done
+if [[ -f "$REPO_ROOT/$HOOKS/protected-paths.txt" ]]; then pass "$HOOKS/protected-paths.txt is tracked"; else fail "$HOOKS/protected-paths.txt is tracked"; fi
+# The hook suite finds the hook and its path list beside itself. Two of its
+# cases name /home/<user> literally, so it runs with the machine's HOME; it
+# only hands paths to the hook as text and writes nothing.
+OUT="$(env -u FNET_PROTECTED_PATHS HOME="$MACHINE_HOME" "$REPO_ROOT/$HOOKS/protect-credentials.test.sh" 2>&1)"
+RC=$?; ERR=""
+if (( RC == 0 )); then
+    pass "the repo copy of protect-credentials.test.sh passes ($(tail -n 1 <<<"$OUT"))"
+else
+    fail "the repo copy of protect-credentials.test.sh passes (status $RC)"
+    grep -E 'FAIL|passed=' <<<"$OUT" | sed 's/^/      | /'
+fi
 
 echo
 echo "Passed: $PASSED, failed: $FAILED"

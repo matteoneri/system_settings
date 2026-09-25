@@ -66,7 +66,7 @@ Toolchain is rustup-managed; these four live in `~/.cargo/bin`, with aliases in 
 | `cargo-machete` | unused-dependency scan | `cargo unused` |
 
 Use all four where they improve the flow. Two need per-project config — copy the canonical
-versions from `~/Documents/Projects/system_settings/templates/rust/`:
+versions from `@PROJECTS_ROOT@/system_settings/templates/rust/`:
 
 - **`.config/nextest.toml`** at the workspace root. Nextest has **no** user-level config, so
   every workspace needs its own. Ships a `default` profile for local runs and a `ci` profile
@@ -116,7 +116,7 @@ ask for the body as text and paste it into Bitbucket by hand.
 ## FNA session bus (this machine only)
 
 The FNA sessions (`fna_payments`, `fna_models`, `paynet_aws_containers`) exchange ephemeral
-signals via `~/Documents/Projects/ActiveProjects/FNA/.session-bus/` — protocol in its README.
+signals via `@PROJECTS_ROOT@/ActiveProjects/FNA/.session-bus/` — protocol in its README.
 Send with `send.sh <your-identity> "msg"` (single-writer, append-only).
 **Bus = transport, never record**: anything durable or Federico-facing still goes to the
 coordination board/inboxes in `paynet_aws_containers`.
