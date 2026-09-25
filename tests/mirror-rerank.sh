@@ -641,8 +641,9 @@ assert_err_contains "the refusal says why, so it is not mistaken for a usage err
 assert_false "reflector was not invoked after the refused fallback" test -e "$REFLECTOR_ARGS"
 
 # ---------------------------------------------------------------------------
-# The zsh side: _ask_yn, the mirror hook, and the weekly sync check's guard,
-# each extracted from the tracked .zshrc and driven in isolation. Non-interactive
+# The zsh side: _ask_yn, the mirror hook, and the weekly sync check (its guard,
+# its stamp under PROJECTS_ROOT and its handling of a stopped sync.sh), each
+# extracted from the tracked .zshrc and driven in isolation. Non-interactive
 # checks run under plain `zsh -c`; prompt checks run under a pseudo-terminal,
 # because zsh's `read -k` reads the terminal, not stdin. ZDOTDIR points at an
 # empty directory so the real rc files stay out.
@@ -661,12 +662,15 @@ mkdir -p "$ZDOTDIR"
 # the keystroke meant for the hook's prompt.
 : > "$ZDOTDIR/.zshrc"
 export MIRROR_RERANK_BIN="$SCRIPT"
-# The sync check hardcodes $HOME/Documents/Projects/system_settings/.last_sync;
-# a scratch HOME with a stale stamp (epoch 0) makes it want to prompt, without
-# a sync.sh to run and without ever reading the real stamp.
+# The sync check reads $PROJECTS_ROOT/system_settings/.last_sync. The scratch
+# root sits outside the scratch HOME, so a check that still built its path from
+# HOME would find no stamp there. A stale stamp (epoch 0) makes it want to
+# prompt, and the real stamp and the real sync.sh are never reached.
 export STALE_HOME="$SCRATCH/home"
-mkdir -p "$STALE_HOME/Documents/Projects/system_settings"
-printf '0\n' > "$STALE_HOME/Documents/Projects/system_settings/.last_sync"
+export SYNC_ROOT="$SCRATCH/projects"
+SYNC_DIR="$SYNC_ROOT/system_settings"
+mkdir -p "$STALE_HOME" "$SYNC_DIR"
+printf '0\n' > "$SYNC_DIR/.last_sync"
 
 # pty_cmd <zsh-command> : run it in an interactive zsh under a pseudo-terminal,
 # feeding <keys> only after the prompt has had time to render -- the hook must
@@ -697,14 +701,19 @@ pty_ask_typeahead() { pty_cmd_typeahead "$1" "$ASK_CMD"; }
 SYNC_CMD="source \"$SYNC\"; _settings_sync_check; print SENTINEL_AFTER_SYNC"
 pty_sync() {
     { sleep 1.5; printf '%s' "$1"; sleep 0.5; } \
-        | timeout 20 script -qec "env HOME=\"$STALE_HOME\" zsh -i -c '$SYNC_CMD'" /dev/null 2>/dev/null
+        | timeout 20 script -qec "env HOME=\"$STALE_HOME\" PROJECTS_ROOT=\"$SYNC_ROOT\" zsh -i -c '$SYNC_CMD'" /dev/null 2>/dev/null
+}
+# pty_sync_noroot : the same terminal with PROJECTS_ROOT unset.
+pty_sync_noroot() {
+    { sleep 1.5; printf '%s' "$1"; sleep 0.5; } \
+        | timeout 20 script -qec "env -u PROJECTS_ROOT HOME=\"$STALE_HOME\" zsh -i -c '$SYNC_CMD'" /dev/null 2>/dev/null
 }
 hook_noninteractive()      { zsh -c "source \"$HOOK\"; _mirror_rerank_check; print rc=\$?"; }
 # Interactive forced on, but stdin is a pipe, not a terminal: the guard's
 # mixed case, and the one that keeps a blocking read out of automation.
 hook_interactive_no_tty()  { printf '' | zsh -i -c "source \"$HOOK\"; _mirror_rerank_check; print rc=\$?"; }
-sync_noninteractive()      { env HOME="$STALE_HOME" zsh -c "source \"$SYNC\"; _settings_sync_check; print rc=\$?"; }
-sync_interactive_no_tty()  { printf '' | env HOME="$STALE_HOME" zsh -i -c "source \"$SYNC\"; _settings_sync_check; print rc=\$?"; }
+sync_noninteractive()      { env HOME="$STALE_HOME" PROJECTS_ROOT="$SYNC_ROOT" zsh -c "source \"$SYNC\"; _settings_sync_check; print rc=\$?"; }
+sync_interactive_no_tty()  { printf '' | env HOME="$STALE_HOME" PROJECTS_ROOT="$SYNC_ROOT" zsh -i -c "source \"$SYNC\"; _settings_sync_check; print rc=\$?"; }
 
 echo "== _ask_yn is defined once and used by every prompt =="
 assert_true "_ask_yn is defined"                          grep -q '^_ask_yn() {' "$ZSHRC"
@@ -801,6 +810,47 @@ assert_out      "a stale stamp in an interactive shell with no TTY: returns 0, p
 assert_contains "on a terminal a stale stamp still prompts"         "Run sync now?"       pty_sync n
 assert_contains "answering n returns and the rest of .zshrc runs"   "SENTINEL_AFTER_SYNC" pty_sync n
 assert_contains "Ctrl-C at the sync prompt returns and the rest of .zshrc runs" "SENTINEL_AFTER_SYNC" pty_sync $'\003'
+
+echo "== the weekly sync check reads its stamp under PROJECTS_ROOT, and skips without one =="
+date +%s > "$SYNC_DIR/.last_sync"
+assert_not_contains "a fresh stamp in \$PROJECTS_ROOT/system_settings: no prompt" "Run sync now?" pty_sync n
+printf '0\n' > "$SYNC_DIR/.last_sync"
+assert_not_contains "PROJECTS_ROOT unset: no banner, no prompt"           "[system_settings]"   pty_sync_noroot n
+assert_contains     "PROJECTS_ROOT unset: the rest of .zshrc still runs"  "SENTINEL_AFTER_SYNC" pty_sync_noroot n
+
+# A stub sync.sh in a clean scratch repo (.last_sync ignored, as in the real
+# one), exiting with STUB_SYNC_EXIT. Git runs with no global or system config.
+cat > "$SYNC_DIR/sync.sh" <<'STUB'
+#!/bin/bash
+echo "STUB_SYNC_RAN"
+exit "${STUB_SYNC_EXIT:-0}"
+STUB
+chmod +x "$SYNC_DIR/sync.sh"
+printf '.last_sync\n' > "$SYNC_DIR/.gitignore"
+fixture_git() {
+    GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -C "$SYNC_DIR" \
+        -c user.name=test -c user.email=test@example.invalid -c commit.gpgsign=false "$@"
+}
+fixture_git init -q && fixture_git add -A && fixture_git commit -qm fixture \
+    || fail "could not build the scratch system_settings repo"
+stamp_is() { [[ "$(cat "$SYNC_DIR/.last_sync" 2>/dev/null)" == "$1" ]]; }
+stamp_is_recent() { local s; s="$(cat "$SYNC_DIR/.last_sync" 2>/dev/null)"; [[ "$s" =~ ^[0-9]+$ ]] && (( $(date +%s) - s < 300 )); }
+
+echo "== a sync.sh that stops commits nothing and keeps the stamp, so the next terminal asks again =="
+printf '0\n' > "$SYNC_DIR/.last_sync"
+sync_out="$(STUB_SYNC_EXIT=3 pty_sync y)"
+assert_contains     "answering y ran the stub sync.sh"                "STUB_SYNC_RAN"        printf '%s' "$sync_out"
+assert_not_contains "a stopped sync does not report no changes"       "No changes detected"  printf '%s' "$sync_out"
+assert_not_contains "a stopped sync does not offer a commit"          "Commit and push?"     printf '%s' "$sync_out"
+assert_contains     "the rest of .zshrc runs after a stopped sync"    "SENTINEL_AFTER_SYNC"  printf '%s' "$sync_out"
+assert_true         "the stamp is unchanged after a stopped sync"     stamp_is 0
+assert_contains     "the next terminal asks again"                    "Run sync now?"        pty_sync n
+
+echo "== a sync.sh that succeeds with nothing to commit renews the stamp under PROJECTS_ROOT =="
+printf '0\n' > "$SYNC_DIR/.last_sync"
+sync_out="$(STUB_SYNC_EXIT=0 pty_sync y)"
+assert_contains     "a clean sync reports no changes"                 "No changes detected." printf '%s' "$sync_out"
+assert_true         "\$PROJECTS_ROOT/system_settings/.last_sync is renewed" stamp_is_recent
 
 echo "== the tzupdate wrapper and its header are gone =="
 assert_false "no tzupdate function definition remains" grep -q '^tzupdate() {' "$ZSHRC"

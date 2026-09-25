@@ -40,7 +40,7 @@ if [[ ! -x "$GCALCLI" ]]; then
 fi
 
 # User config: defines GCAL_CAL_ARGS as a bash array of --cal entries.
-# See ~/Documents/Projects/system_settings/home/.config/gcal-next.env.example
+# See home/.config/gcal-next.env.example in the system_settings repo.
 GCAL_CAL_ARGS=()
 if [[ -f "$HOME/.config/gcal-next.env" ]]; then
     # shellcheck source=/dev/null

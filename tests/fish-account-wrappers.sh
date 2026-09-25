@@ -26,11 +26,14 @@ pass() { echo "  ok: $*"; }
 SCRATCH="$(mktemp -d)"
 trap 'rm -rf "$SCRATCH"' EXIT
 export HOME="$SCRATCH/home"
+# The scratch projects root. The wrappers match .../Projects/ActiveProjects/OWN
+# and .../FNA by suffix, so it ends in Projects, as both machines' roots do.
+export PROJECTS_ROOT="$HOME/Projects"
 NEUTRAL="$HOME/elsewhere"
-OWN_REPO="$HOME/Documents/Projects/ActiveProjects/OWN/some-repo"
-OWN_ROOT="$HOME/Documents/Projects/ActiveProjects/OWN"
-FNA_REPO="$HOME/Documents/Projects/ActiveProjects/FNA/some-repo"
-OWNER_DIR="$HOME/Documents/Projects/ActiveProjects/OWNER"
+OWN_ROOT="$PROJECTS_ROOT/ActiveProjects/OWN"
+OWN_REPO="$OWN_ROOT/some-repo"
+FNA_REPO="$PROJECTS_ROOT/ActiveProjects/FNA/some-repo"
+OWNER_DIR="$PROJECTS_ROOT/ActiveProjects/OWNER"
 mkdir -p "$NEUTRAL" "$OWN_REPO" "$FNA_REPO" "$OWNER_DIR"
 
 STUBBIN="$SCRATCH/bin"

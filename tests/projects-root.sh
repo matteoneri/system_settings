@@ -10,7 +10,9 @@
 # The conversion sections check the tracked files in the working tree. The
 # sync and restore sections run a copy of sync.sh or restore.sh in scratch
 # repositories and scratch homes; they never touch this worktree's git state or
-# the machine's own config.
+# the machine's own config. The shell sections run the zsh loader extracted
+# from home/.zshrc and project-launch, with its externals stubbed, in the same
+# scratch homes. The fish loader has its own suite, tests/fish-projects-root.sh.
 #
 # Run: bash tests/projects-root.sh
 
@@ -954,6 +956,251 @@ for rel in "${FISH_FILES[@]:0:2}"; do
     expect_copy "... and still installing ~/$rel" "$REPO_R/home/$rel" "$HOME_R/$rel"
 done
 reset_repo "$REPO_R"
+
+# ── shell consumers ──────────────────────────────────────────────
+# An installed shell or script cannot source this repo's library, so the zsh
+# loader in home/.zshrc and the resolver in project-launch repeat its rules.
+# Their functions are extracted from the tracked files and run on the same
+# cases as the library. zsh runs with -f, so no rc file is read; the
+# interactive cases run under a pseudo-terminal (script), where -t 0 holds.
+# project-launch runs whole, with rofi, kitty, i3-msg, notify-send, the
+# browsers, obsidian and sleep stubbed on PATH, in a scratch HOME.
+
+ZSHRC="$REPO_ROOT/home/.zshrc"
+LAUNCH="$REPO_ROOT/home/.config/i3/scripts/project-launch"
+ZLOADER="$SCRATCH/zloader.zsh"
+LRESOLVER="$SCRATCH/lresolver.sh"
+sed -n '/^_projects_root_[a-z_]*() {/,/^}/p' "$ZSHRC" > "$ZLOADER"
+sed -n '/^_projects_root_[a-z_]*() {/,/^}/p; /^resolve_projects_root() {/,/^}/p' "$LAUNCH" > "$LRESOLVER"
+mkdir -p "$HOME/Projects" "$HOME/Other" "$SCRATCH/sx/Work"
+ln -sfn "$SCRATCH/sx" "$SCRATCH/sxlink"
+touch "$SCRATCH/plainfile"
+
+expect_true() { local d="$1"; shift; if "$@" >/dev/null 2>&1; then pass "$d"; else fail "$d"; fi; }
+line_no() { grep -n -m1 -e "$1" "$ZSHRC" | cut -d: -f1; }  # <regex>: first matching line of .zshrc
+# What each consumer resolves from the current HOME, declaration file and
+# PROJECTS_ROOT: the root, or <fail>.
+lib_root()    { bash -c 'source "$0" && projects_root_resolve 2>/dev/null || echo "<fail>"' "$LIB"; }
+zsh_root()    { timeout 10 zsh -f -c 'source "$1"; _projects_root_load; print -r -- "${PROJECTS_ROOT-<fail>}"' zsh "$ZLOADER" 2>/dev/null; }
+launch_root() { bash -c 'source "$0"; if resolve_projects_root; then printf "%s\n" "$PROJECTS_ROOT"; else echo "<fail>"; fi' "$LRESOLVER" 2>/dev/null; }
+parity() {  # <desc> <expected root or <fail>>
+    local lib zsh launch
+    lib="$(lib_root)"; zsh="$(zsh_root)"; launch="$(launch_root)"
+    if [[ "$lib" == "$2" && "$zsh" == "$2" && "$launch" == "$2" ]]; then
+        pass "$1"
+    else
+        fail "$1"
+        printf '      want: %s\n      library: %s\n      zsh loader: %s\n      project-launch: %s\n' "$2" "$lib" "$zsh" "$launch"
+    fi
+}
+# zload [code] -- the zsh loader in a non-interactive zsh, then code; sets
+# OUT, ERR and RC (124 when it hangs).
+zload() {
+    OUT="$(timeout 10 zsh -f -c 'source "$1" || exit 99; _projects_root_load; print -r -- "rc=$?"; eval "$2"' zsh "$ZLOADER" "${1-}" 2>"$SCRATCH/stderr")"
+    RC=$?
+    ERR="$(<"$SCRATCH/stderr")"
+}
+# zpty -- the zsh loader in an interactive zsh under a pseudo-terminal; prints
+# the transcript, CRs dropped, ending in "SENTINEL rc=<status> root=<root>".
+zpty() {
+    printf 'source %q\n_projects_root_load\nprint -r -- "SENTINEL rc=$? root=${PROJECTS_ROOT-<unset>}"\n' "$ZLOADER" > "$SCRATCH/zdrive.zsh"
+    timeout 20 script -qec "zsh -f -i -c 'source $SCRATCH/zdrive.zsh'" /dev/null </dev/null 2>/dev/null | tr -d '\r'
+}
+
+echo "== shell: the zsh loader is a named function, called before the steps that need the root =="
+expect_true "home/.zshrc parses (zsh -n)"                  zsh -n "$ZSHRC"
+expect_true "_projects_root_load is defined in .zshrc"     grep -q '^_projects_root_load() {' "$ZSHRC"
+expect_true "the extracted loader defines it"              grep -q '^_projects_root_load() {' "$ZLOADER"
+load_at="$(line_no '^_projects_root_load$')"
+sync_at="$(line_no '^_settings_sync_check$')"
+title_at="$(line_no '^[^#]*terminal-title\.zsh')"
+omz_at="$(line_no '^source "$ZSH/oh-my-zsh.sh"')"
+if [[ -n "$load_at" && -n "$sync_at" && -n "$title_at" && -n "$omz_at" ]] \
+    && (( load_at < omz_at && load_at < sync_at && load_at < title_at )); then
+    pass "the loader runs near the top, before Oh My Zsh, the sync check and the terminal-title hook"
+else
+    fail "the loader runs near the top (loader ${load_at:-none}, omz ${omz_at:-none}, sync ${sync_at:-none}, title ${title_at:-none})"
+fi
+
+echo "== shell: the zsh loader and project-launch resolve as the library does =="
+nodecl; unset PROJECTS_ROOT
+decl $'PROJECTS_ROOT=${HOME}/Projects\n';                 parity "\${HOME} expands"                         "$HOME/Projects"
+decl $'PROJECTS_ROOT=$HOME/Projects\n';                   parity "\$HOME expands"                           "$HOME/Projects"
+decl $'PROJECTS_ROOT=~/Projects\n';                       parity "a leading ~ expands"                      "$HOME/Projects"
+decl $'PROJECTS_ROOT=~\n';                                parity "a bare ~ is HOME"                         "$HOME"
+decl $'PROJECTS_ROOT=${HOME}/./Projects//\n';             parity "dot segments and trailing slashes go"     "$HOME/Projects"
+decl $'PROJECTS_ROOT=${HOME}/Projects\n# PROJECTS_ROOT=${HOME}/Other\n;PROJECTS_ROOT=${HOME}/Other\n   # PROJECTS_ROOT=/nowhere\n'
+parity "commented-out lines are ignored" "$HOME/Projects"
+decl $'PROJECTS_ROOT=${HOME}/Other\nPROJECTS_ROOT=${HOME}/Projects\n'; parity "the last PROJECTS_ROOT= line wins" "$HOME/Projects"
+decl $'  PROJECTS_ROOT = "${HOME}/Projects"  \r\n';          parity "whitespace, double quotes and CRLF are stripped" "$HOME/Projects"
+decl "PROJECTS_ROOT='\${HOME}/Projects'";                    parity "single quotes and no final newline"      "$HOME/Projects"
+decl $'OTHER=1\nPROJECTS_ROOT=${HOME}/Projects\nMORE=2\n';   parity "other assignments are skipped"           "$HOME/Projects"
+decl $'PROJECTS_ROOT="${HOME}/Projects\n';                   parity "an unbalanced quote stays, so it is relative" "<fail>"
+decl $'PROJECTS_ROOT=""\n';                                  parity "an empty quoted value fails"             "<fail>"
+decl $'PROJECTS_ROOT=\n';                                    parity "an empty value fails"                    "<fail>"
+decl $'PROJECTS_ROOT=Projects\n';                            parity "a relative value fails"                  "<fail>"
+decl $'PROJECTS_ROOT=~other/Projects\n';                     parity "~user is not expanded"                   "<fail>"
+decl $'PROJECTS_ROOT=$HOMEDIR/Projects\n';                   parity "\$HOMEDIR is not \$HOME"                  "<fail>"
+decl $'PROJECTS_ROOT=${HOME}/Missing\n';                     parity "a missing directory fails"               "<fail>"
+decl $'PROJECTS_ROOT=///\n';                                 parity "the filesystem root is refused"          "<fail>"
+decl $'NOT_PROJECTS_ROOT=${HOME}/Projects\n# PROJECTS_ROOT=${HOME}/Projects\n'; parity "no live PROJECTS_ROOT= line fails" "<fail>"
+nodecl;                                                      parity "no export and no file fails"             "<fail>"
+export PROJECTS_ROOT="$SCRATCH/sx/./Work//../Work/";         parity "an exported value is normalised"         "$SCRATCH/sx/Work"
+export PROJECTS_ROOT="$SCRATCH/sxlink/Work";                 parity "a symlinked root keeps its spelling"     "$SCRATCH/sxlink/Work"
+export PROJECTS_ROOT='${HOME}/Projects';                     parity "a literal \${HOME} in an export expands"  "$HOME/Projects"
+export PROJECTS_ROOT='~/Projects';                           parity "a literal ~ in an export expands"        "$HOME/Projects"
+export PROJECTS_ROOT="$SCRATCH/plainfile";                   parity "an exported file, not a directory, fails" "<fail>"
+export PROJECTS_ROOT=/;                                      parity "an exported / fails"                     "<fail>"
+decl $'PROJECTS_ROOT=${HOME}/Projects\n'
+export PROJECTS_ROOT="$HOME/Other";                          parity "an export wins over the declaration file" "$HOME/Other"
+export PROJECTS_ROOT=Projects;                               parity "a bad export fails, never falling back to the file" "<fail>"
+export PROJECTS_ROOT=;                                       parity "an empty export falls back to the file"  "$HOME/Projects"
+unset PROJECTS_ROOT
+
+echo "== shell: the zsh loader exports the root and stays silent off a terminal =="
+decl $'PROJECTS_ROOT=${HOME}/Projects/\n'
+zload 'printenv PROJECTS_ROOT'
+expect_out "a declared root is exported, normalised" $'rc=0\n'"$HOME/Projects"
+nodecl
+zload 'print -r -- "${PROJECTS_ROOT-<unset>}"'
+expect_rc  "no file, non-interactive: returns promptly with status 0" 0
+expect_out "... PROJECTS_ROOT stays unset, and nothing else is printed" $'rc=0\n<unset>'
+if [[ -z "$ERR" ]]; then pass "... and nothing goes to stderr"; else fail "... and nothing goes to stderr"; show; fi
+OUT="$(printf '' | timeout 10 zsh -f -i -c 'source "$1"; _projects_root_load; print -r -- "rc=$?"' zsh "$ZLOADER" 2>&1)"; RC=$?; ERR=""
+expect_out "no file, interactive but no terminal on stdin: silent" "rc=0"
+PROJECTS_ROOT=Projects zload 'print -r -- "${PROJECTS_ROOT-<unset>}"'
+expect_out "a bad export is unset, so the steps that need it skip, silently here" $'rc=0\n<unset>'
+if [[ -z "$ERR" ]]; then pass "... with nothing on stderr"; else fail "... with nothing on stderr"; show; fi
+
+echo "== shell: an interactive terminal gets exactly one warning line, and startup goes on (AE5) =="
+nodecl
+T="$(zpty)"
+body="$(grep -v '^SENTINEL' <<<"$T" | grep -c .)"
+if [[ "$body" == 1 ]]; then pass "no file: exactly one line is printed besides the sentinel"; else fail "no file: exactly one line is printed (got $body)"; sed 's/^/      | /' <<<"$T"; fi
+expect_has   "... the loader returns 0 and PROJECTS_ROOT is unset" "SENTINEL rc=0 root=<unset>" "$T"
+warning="$(grep -v '^SENTINEL' <<<"$T")"
+expect_has   "... the warning names PROJECTS_ROOT" "PROJECTS_ROOT is not set" "$warning"
+expect_has   "... the warning names the declaration file" "$DECL" "$warning"
+expect_has   "... the warning shows the neutral example line" 'PROJECTS_ROOT=${HOME}/path/to/projects' "$warning"
+expect_has   "... the warning says what is skipped" "sync check" "$warning"
+expect_lacks "... the example is not the Dell root" "Documents/Projects" "$warning"
+expect_lacks "... the example is not the laptop root (~)" "~/Projects" "$warning"
+expect_lacks "... the example is not the laptop root (\${HOME})" '{HOME}/Projects' "$warning"
+expect_lacks "... the example is not the laptop root (\$HOME)" '$HOME/Projects' "$warning"
+decl $'PROJECTS_ROOT=${HOME}/Missing\n'
+T="$(zpty)"
+expect_has   "a declared missing directory warns, naming the value" "PROJECTS_ROOT='$HOME/Missing' (declared) is not an existing directory" "$T"
+expect_has   "... and PROJECTS_ROOT is left unset" "SENTINEL rc=0 root=<unset>" "$T"
+decl $'PROJECTS_ROOT=${HOME}/Projects\n'
+T="$(PROJECTS_ROOT=Projects zpty)"
+expect_has   "a bad export warns, naming it as exported" "PROJECTS_ROOT='Projects' (exported) is not an absolute path" "$T"
+T="$(zpty)"
+expect_has   "a declared root on a terminal: exported" "SENTINEL rc=0 root=$HOME/Projects" "$T"
+expect_lacks "... with no warning" "[projects-root]" "$T"
+nodecl
+
+echo "== shell: the terminal-title hook is sourced only when the root and the hook exist =="
+TITLE_BLOCK="$SCRATCH/title.zsh"
+grep -A1 -e '^\[\[ -n "\$PROJECTS_ROOT" && -f .*terminal-title\.zsh" \]\] \\$' "$ZSHRC" > "$TITLE_BLOCK"
+expect_true  "the guarded source is found in .zshrc" test "$(wc -l < "$TITLE_BLOCK")" -eq 2
+expect_true  "no unguarded terminal-title source remains" test "$(grep -c '^source .*terminal-title' "$ZSHRC")" -eq 0
+HOOK_DIR="$SCRATCH/titleroot/ActiveProjects/OWN/claude-code-terminal-title/shell"
+mkdir -p "$HOOK_DIR"
+title_run() { timeout 10 zsh -f -c 'source "$1"; print -r -- "after"' zsh "$TITLE_BLOCK" 2>&1; }
+unset PROJECTS_ROOT
+OUT="$(title_run)"
+expect_out "PROJECTS_ROOT unset: skipped without an error" "after"
+OUT="$(PROJECTS_ROOT="$SCRATCH/titleroot" title_run)"
+expect_out "the hook missing under the root: skipped without an error" "after"
+printf 'print -r -- TITLE_HOOK_LOADED\n' > "$HOOK_DIR/terminal-title.zsh"
+OUT="$(PROJECTS_ROOT="$SCRATCH/titleroot" title_run)"
+expect_out "the hook present under the root: sourced" $'TITLE_HOOK_LOADED\nafter'
+
+echo "== shell: project-launch finds projects under \$PROJECTS_ROOT/ActiveProjects =="
+PL="$SCRATCH/pl"
+PLHOME="$PL/home"
+PLROOT="$PLHOME/Projects"
+PLDECL="$PLHOME/.config/environment.d/50-projects-root.conf"
+export PL_CALLS="$PL/calls"
+mkdir -p "$PL/bin" "$PLROOT/ActiveProjects/OWN/alpha" "$PLROOT/ActiveProjects/FNA/beta" "$PLROOT/ActiveProjects/loose" "${PLDECL%/*}"
+# One recording stub for every external: each call appends "CALL [arg]..." to
+# $PL_CALLS/<name>. rofi also saves the list it was given and picks nothing
+# unless STUB_ROFI_PICK says otherwise; i3-msg answers queries with no workspaces.
+cat > "$PL/bin/stub" <<'STUB'
+#!/bin/bash
+name="${0##*/}"
+{ printf 'CALL'; printf ' [%s]' "$@"; printf '\n'; } >> "$PL_CALLS/$name"
+case "$name" in
+    rofi) cat > "$PL_CALLS/rofi.stdin"; printf '%s\n' "${STUB_ROFI_PICK-}" ;;
+    i3-msg) [[ "${1-}" == -t ]] && echo '[]' ;;
+esac
+exit 0
+STUB
+chmod +x "$PL/bin/stub"
+for name in rofi kitty i3-msg notify-send brave firefox obsidian sleep; do ln -sfn stub "$PL/bin/$name"; done
+# launch [args...] -- project-launch in the scratch HOME with the stubs first on
+# PATH and PROJECTS_ROOT as the caller left it; sets OUT, ERR and RC.
+launch() {
+    rm -rf "$PL_CALLS"; mkdir -p "$PL_CALLS"
+    OUT="$(HOME="$PLHOME" PATH="$PL/bin:$PATH" timeout 20 bash "$LAUNCH" "$@" 2>"$SCRATCH/stderr")"
+    RC=$?
+    ERR="$(<"$SCRATCH/stderr")"
+}
+# wait_for <file> <fixed string> -- the launcher backgrounds kitty, so its
+# calls may land just after it exits.
+wait_for() {
+    local i
+    for i in $(seq 50); do grep -qF -- "$2" "$1" 2>/dev/null && return 0; sleep 0.1; done
+    return 1
+}
+calls() { cat "$PL_CALLS/$1" 2>/dev/null; }
+
+expect_true "project-launch parses (bash -n)" bash -n "$LAUNCH"
+unset PROJECTS_ROOT
+printf 'PROJECTS_ROOT=${HOME}/Projects/\n' > "$PLDECL"
+launch
+expect_rc  "declared root, nothing picked: exits 0" 0
+lst="$(cat "$PL_CALLS/rofi.stdin" 2>/dev/null)"
+expect_true "rofi lists OWN/alpha" grep -qx 'OWN/alpha' <<<"$lst"
+expect_true "rofi lists FNA/beta"  grep -qx 'FNA/beta'  <<<"$lst"
+expect_true "rofi lists loose"     grep -qx 'loose'     <<<"$lst"
+
+launch OWN/alpha
+expect_rc  "a named project launches" 0
+wait_for "$PL_CALLS/kitty" " [claude]"
+claude_call="$(grep -F ' [claude]' "$PL_CALLS/kitty" 2>/dev/null)"
+expect_has "kitty starts claude in the project under the root" "[--directory] [$PLROOT/ActiveProjects/OWN/alpha]" "$claude_call"
+expect_has "... with the OWN Claude config" "[CLAUDE_CONFIG_DIR=$PLHOME/.claude-own]" "$claude_call"
+expect_has "... carrying the resolved, normalised PROJECTS_ROOT" "[PROJECTS_ROOT=$PLROOT]" "$claude_call"
+
+rm -f "$PLDECL"
+PROJECTS_ROOT="$PLROOT//" launch FNA/beta
+wait_for "$PL_CALLS/kitty" " [claude]"
+claude_call="$(grep -F ' [claude]' "$PL_CALLS/kitty" 2>/dev/null)"
+expect_has "an exported root works with no declaration file" "[--directory] [$PLROOT/ActiveProjects/FNA/beta]" "$claude_call"
+expect_has "... and claude gets it normalised" "[PROJECTS_ROOT=$PLROOT]" "$claude_call"
+
+printf 'PROJECTS_ROOT=${HOME}/Projects\n' > "$PLDECL"
+launch nope
+expect_rc  "a missing project still exits 1" 1
+expect_has "... telling notify-send where it looked" "[Project not found] [$PLROOT/ActiveProjects/nope]" "$(calls notify-send)"
+
+echo "== shell: project-launch with no resolvable root reports it and stops =="
+rm -f "$PLDECL"
+launch
+if (( RC != 0 )); then pass "no export and no file: exits non-zero"; else fail "no export and no file: exits non-zero"; show; fi
+note="$(calls notify-send)"
+expect_has   "notify-send receives the resolver message" "PROJECTS_ROOT is not set (neither exported nor declared)" "$note"
+expect_has   "... naming the declaration file" "$PLDECL" "$note"
+expect_has   "... with the neutral example line" 'PROJECTS_ROOT=${HOME}/path/to/projects' "$note"
+expect_has   "the message also goes to stderr" "PROJECTS_ROOT is not set" "$ERR"
+expect_true  "rofi is never shown"   test ! -e "$PL_CALLS/rofi"
+expect_true  "kitty is never started" test ! -e "$PL_CALLS/kitty"
+printf 'PROJECTS_ROOT=${HOME}/Missing\n' > "$PLDECL"
+launch OWN/alpha
+if (( RC != 0 )); then pass "a declared missing directory: exits non-zero"; else fail "a declared missing directory: exits non-zero"; show; fi
+expect_has   "... notify-send names the value" "PROJECTS_ROOT='$PLHOME/Missing' (declared) is not an existing directory" "$(calls notify-send)"
+expect_true  "... and kitty is never started" test ! -e "$PL_CALLS/kitty"
 
 echo
 echo "Passed: $PASSED, failed: $FAILED"
