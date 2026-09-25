@@ -8,8 +8,9 @@
 # leaks between cases. HOME points into a mktemp scratch and PROJECTS_ROOT is
 # unset first, so the machine's own value and config are never read or written.
 # The conversion sections check the tracked files in the working tree. The
-# sync sections run a copy of sync.sh in scratch repositories and scratch homes;
-# they never touch this worktree's git state or the machine's own config.
+# sync and restore sections run a copy of sync.sh or restore.sh in scratch
+# repositories and scratch homes; they never touch this worktree's git state or
+# the machine's own config.
 #
 # Run: bash tests/projects-root.sh
 
@@ -708,6 +709,251 @@ expect_has   "... naming the repo" "$REPO_A" "$OUT"
 expect_has   "... and the root" "$SY/elsewhere" "$OUT"
 expect_not_staged "... before copying anything"
 expect_clean "... leaving the repo as committed" "$REPO_A"
+
+# ── restore: restore.sh resolves the root first, then fills the configs in ──
+# Each case runs restore.sh from a plain copy of the repo files it reads,
+# committed in a fresh git repository at <root>/system_settings; never a copy
+# of this worktree. env -i hands it only HOME (a scratch home), PATH, TMPDIR
+# and, when the case sets one, PROJECTS_ROOT; stdin is closed. PATH holds
+# logging stubs for every command that would touch the machine and links to
+# the plain tools restore needs, with jq in a directory of its own so a case
+# can leave it out. Nothing else is on PATH, so a step no stub covers fails
+# instead of reaching the machine.
+RS="$SCRATCH/restore"
+RSTUBS="$RS/stubs"; RTOOLS="$RS/tools"; RJQ="$RS/jq"; CALLS="$RS/calls.log"
+mkdir -p "$RSTUBS" "$RTOOLS" "$RJQ" "$RS/tmp"
+for tool in sudo pacman paru curl git makepkg chsh xrdb; do
+    printf '#!/bin/sh\necho "%s $*" >> "%s"\n' "$tool" "$CALLS" > "$RSTUBS/$tool"
+    chmod +x "$RSTUBS/$tool"
+done
+for tool in bash sh env cat cp mv rm ln mkdir chmod dirname basename readlink realpath stat mktemp perl python3 sed grep; do
+    if [[ -x "/usr/bin/$tool" ]]; then ln -s "/usr/bin/$tool" "$RTOOLS/$tool"; else fail "the restore cases need /usr/bin/$tool"; fi
+done
+ln -s /usr/bin/jq "$RJQ/jq"
+
+# make_restore_repo <root>: commit <root>/system_settings as a plain copy of
+# restore.sh, lib/ and home/, with fixture package lists.
+make_restore_repo() {
+    local repo="$1/system_settings" f
+    mkdir -p "$repo"
+    cp -R "$REPO_ROOT/restore.sh" "$REPO_ROOT/lib" "$REPO_ROOT/home" "$repo/"
+    for f in official aur; do printf 'fixture\n' > "$repo/packages-$f.txt"; done
+    sgit "$repo" init -q && sgit "$repo" add -A && sgit "$repo" commit -qm fixture
+}
+
+# run_restore <repo> <home> <PROJECTS_ROOT, or "" for none exported> [args...]:
+# run the repo's restore.sh as that machine; sets OUT (stdout and stderr) and
+# RC. NOJQ=1 before the call leaves jq off PATH.
+run_restore() {
+    local repo="$1" home="$2" root="$3" path="$RSTUBS:$RJQ:$RTOOLS"
+    shift 3
+    [[ -n "${NOJQ-}" ]] && path="$RSTUBS:$RTOOLS"
+    local envs=(HOME="$home" PATH="$path" TMPDIR="$RS/tmp")
+    [[ -n "$root" ]] && envs+=(PROJECTS_ROOT="$root")
+    : > "$CALLS"
+    OUT="$(env -i "${envs[@]}" bash "$repo/restore.sh" "$@" 2>&1 </dev/null)"
+    RC=$?
+    ERR=""
+}
+
+fresh_home() { rm -rf -- "$1"; mkdir -p "$1"; }
+# expect_empty_home <desc> <home>: the run created nothing there.
+expect_empty_home() {
+    local left
+    left="$(cd "$2" && find . -mindepth 1 | head -n 5)"
+    if [[ -z "$left" ]]; then pass "$1"; else fail "$1"; sed 's/^/      created | /' <<<"$left"; fi
+}
+# expect_no_calls <desc>: the run called no stub (sudo, a package manager, curl...).
+expect_no_calls() {
+    if [[ ! -s "$CALLS" ]]; then pass "$1"; else fail "$1"; sed 's/^/      call | /' "$CALLS"; fi
+}
+# expect_filled <desc> <root> <template> <installed>: the installed file is the
+# template with every placeholder replaced by the root, byte for byte.
+expect_filled() {
+    local want got
+    want="$(cat -- "$3"; printf x)"; want="${want%x}"; want="${want//"$TOKEN"/"$2"}"
+    got="$(cat -- "$4" 2>/dev/null; printf x)"; got="${got%x}"
+    if [[ -f "$4" && "$got" == "$want" ]]; then pass "$1"; else fail "$1"; fi
+}
+expect_link() {  # <desc> <link> <target it must name>
+    local got; got="$(readlink -- "$2" 2>/dev/null)"
+    if [[ -L "$2" && "$got" == "$3" ]]; then pass "$1"; else fail "$1 (${got:-not a link})"; fi
+}
+expect_copy() {  # <desc> <repo file> <installed file>: same bytes, and executable when the repo file is
+    if [[ -f "$3" ]] && cmp -s "$2" "$3" && { [[ ! -x "$2" ]] || [[ -x "$3" ]]; }; then pass "$1"; else fail "$1"; fi
+}
+# trust_count <config.toml> <root>: how many lines are exactly the portwatch trust header.
+trust_count() { grep -cxF "[projects.\"$2/ActiveProjects/OWN/portwatch\"]" "$1" 2>/dev/null; }
+# own_hook <home> <file path>: the own/ hook link, run as Claude Code runs it on a Read.
+own_hook() {
+    printf '{"tool_name":"Read","tool_input":{"file_path":"%s"}}' "$2" \
+        | env -u FNET_PROTECTED_PATHS HOME="$1" "$1/.claude-own/hooks/protect-credentials.sh" 2>&1
+}
+
+# A root with a space, outside HOME, whose basename is not Projects.
+ROOT_R="$RS/a b/Work"; REPO_R="$ROOT_R/system_settings"; HOME_R="$RS/home-r"
+mkdir -p "$ROOT_R"
+make_restore_repo "$ROOT_R"
+CLAUDE_HOOKS=(protect-credentials.sh protect-credentials.test.sh protected-paths.txt)
+FISH_FILES=(.config/fish/functions/claude.fish .config/fish/functions/codex.fish .config/fish/conf.d/projects-root.fish)
+
+echo "== restore: --help and --list-components run without a root =="
+fresh_home "$HOME_R"
+run_restore "$REPO_R" "$HOME_R" "" --list-components
+expect_rc    "--list-components succeeds with PROJECTS_ROOT unset" 0
+expect_has   "... listing fish as part of --all" "(in --all)" "$(grep -E '^  fish ' <<<"$OUT")"
+run_restore "$REPO_R" "$HOME_R" "" --help
+expect_rc    "--help succeeds with PROJECTS_ROOT unset" 0
+expect_has   "... naming PROJECTS_ROOT" "PROJECTS_ROOT" "$OUT"
+expect_has   "... and the fish component" "fish" "$OUT"
+expect_empty_home "... and neither creates anything under HOME" "$HOME_R"
+
+echo "== restore: an unresolved root stops before any write (AE4, R4) =="
+run_restore "$REPO_R" "$HOME_R" "" --configs --components claude,codex,fish
+expect_fail  "no exported and no declared root stops the restore"
+expect_has   "... naming PROJECTS_ROOT" "PROJECTS_ROOT" "$OUT"
+expect_has   "... and the declaration file" "$HOME_R/.config/environment.d/50-projects-root.conf" "$OUT"
+expect_empty_home "... creating nothing under HOME" "$HOME_R"
+run_restore "$REPO_R" "$HOME_R" ""
+expect_fail  "a bare restore.sh (packages, then every config) stops too"
+expect_no_calls "... before the package step runs sudo, pacman or paru"
+expect_empty_home "... and before any component writes" "$HOME_R"
+expect_clean "... leaving the repo as committed" "$REPO_R"
+
+echo "== restore: a root that does not contain the repo is refused (KTD4) =="
+mkdir -p "$RS/elsewhere"
+run_restore "$REPO_R" "$HOME_R" "$RS/elsewhere" --configs --components claude,codex,fish
+expect_fail  "an existing root without the repo below it stops the restore"
+expect_has   "... naming the repo" "$REPO_R" "$OUT"
+expect_has   "... and the root" "$RS/elsewhere" "$OUT"
+expect_empty_home "... creating nothing under HOME" "$HOME_R"
+run_restore "$REPO_R" "$HOME_R" "$RS/elsewhere" --packages
+expect_fail  "--packages alone is refused too"
+expect_no_calls "... before the package step starts"
+
+echo "== restore: claude and codex install their configs with the root filled in (AE1, R8, R11) =="
+fresh_home "$HOME_R"
+run_restore "$REPO_R" "$HOME_R" "$ROOT_R" --configs --components claude,codex
+expect_rc "restore claude,codex succeeds for a root with a space, outside HOME" 0
+RESTORED="$OUT"
+expect_has   "... the preferences merge, with no .claude.json yet, reporting 'log in first'" "log in first" "$RESTORED"
+expect_absent "... creating no .claude.json" "$HOME_R/.claude-own/.claude.json"
+expect_link  "... linking ~/.codex to .codex-own" "$HOME_R/.codex" ".codex-own"
+expect_no_calls "... running no stubbed command"
+expect_clean "... and leaving the repo as committed" "$REPO_R"
+for acct in own fna; do
+    expect_equal "the installed codex-$acct config.toml trusts <root>/ActiveProjects/OWN/portwatch" \
+        "$(trust_count "$HOME_R/.codex-$acct/config.toml" "$ROOT_R")" 1
+done
+for acct in own fna; do
+    for f in settings.json CLAUDE.md; do
+        expect_filled "~/.claude-$acct/$f is the repo copy with the root filled in" "$ROOT_R" \
+            "$REPO_R/home/claude-code/$acct/$f" "$HOME_R/.claude-$acct/$f"
+    done
+    for f in config.toml AGENTS.md; do
+        expect_filled "~/.codex-$acct/$f is the repo copy with the root filled in" "$ROOT_R" \
+            "$REPO_R/home/codex/$acct/$f" "$HOME_R/.codex-$acct/$f"
+    done
+done
+expect_filled "~/.codex-shared/MEMORY.md is the repo copy with the root filled in" "$ROOT_R" \
+    "$REPO_R/home/codex/shared/MEMORY.md" "$HOME_R/.codex-shared/MEMORY.md"
+expect_equal "no installed file holds $TOKEN or Documents/Projects" \
+    "$(grep -rlF -e "$TOKEN" -e 'Documents/Projects' "$HOME_R" 2>&1)" ""
+for acct in own fna; do
+    for f in statusline.sh title-hook.sh; do
+        expect_copy "~/.claude-$acct/$f is the repo copy, executable" \
+            "$REPO_R/home/claude-code/$acct/$f" "$HOME_R/.claude-$acct/$f"
+    done
+done
+for f in "${CLAUDE_HOOKS[@]}"; do
+    if [[ -L "$HOME_R/.claude-fna/hooks/$f" ]]; then
+        fail "~/.claude-fna/hooks/$f is a real file (it is a link)"
+    else
+        expect_copy "~/.claude-fna/hooks/$f is the repo copy" "$REPO_R/home/claude-code/hooks/$f" "$HOME_R/.claude-fna/hooks/$f"
+    fi
+    expect_link "~/.claude-own/hooks/$f links to its FNA counterpart" \
+        "$HOME_R/.claude-own/hooks/$f" "$HOME_R/.claude-fna/hooks/$f"
+done
+expect_equal "protected-paths.txt reads the same through the own/ link" \
+    "$(cat "$HOME_R/.claude-own/hooks/protected-paths.txt" 2>&1)" "$(cat "$REPO_R/home/claude-code/hooks/protected-paths.txt")"
+OUT="$(own_hook "$HOME_R" '~/notes.txt')"; RC=$?; ERR=""
+if (( RC == 0 )) && [[ -z "$OUT" ]]; then
+    pass "the hook run through the own/ link finds its path list and allows an ordinary read"
+else
+    fail "the hook run through the own/ link finds its path list and allows an ordinary read"; show
+fi
+expect_has "... and denies a read under ~/.ssh" '"permissionDecision":"deny"' "$(own_hook "$HOME_R" '~/.ssh/id_ed25519')"
+
+echo "== restore: a re-run over a restored home, now logged in =="
+rm "$HOME_R/.claude-own/hooks/protected-paths.txt"
+printf 'stale\n' > "$HOME_R/.claude-own/hooks/protected-paths.txt"
+printf '{"userID": "kept", "theme": "light"}\n' > "$HOME_R/.claude-own/.claude.json"
+run_restore "$REPO_R" "$HOME_R" "$ROOT_R" --configs --components claude
+expect_rc    "a second restore succeeds" 0
+expect_link  "a stale own/ hook file is replaced by the link" \
+    "$HOME_R/.claude-own/hooks/protected-paths.txt" "$HOME_R/.claude-fna/hooks/protected-paths.txt"
+expect_equal "the tracked preferences are merged into .claude.json" \
+    "$(jq -r .theme "$HOME_R/.claude-own/.claude.json")" "dark-daltonized"
+expect_equal "... keeping the keys the account wrote" "$(jq -r .userID "$HOME_R/.claude-own/.claude.json")" "kept"
+rm -f "$REPO_R/home/claude-code/fna/preferences.json"
+printf '{"userID": "fna"}\n' > "$HOME_R/.claude-fna/.claude.json"
+run_restore "$REPO_R" "$HOME_R" "$ROOT_R" --configs --components claude
+expect_rc    "a checkout without fna/preferences.json (it is gitignored) still restores" 0
+expect_has   "... reporting that there is nothing to merge, not 'log in first'" "No preferences.json for claude-fna" "$OUT"
+expect_file  "... leaving that account's .claude.json as it was" "$HOME_R/.claude-fna/.claude.json" $'{"userID": "fna"}\n'
+reset_repo "$REPO_R"
+
+# Linking each own/ entry through such a directory would link a hook onto
+# itself; ln refuses ("are the same file"), and the FNA files must survive.
+echo "== restore: a linked ~/.claude-own/hooks directory stops restore, hooks intact =="
+fresh_home "$HOME_R"
+run_restore "$REPO_R" "$HOME_R" "$ROOT_R" --configs --components claude
+rm -rf "$HOME_R/.claude-own/hooks"
+ln -s "$HOME_R/.claude-fna/hooks" "$HOME_R/.claude-own/hooks"
+run_restore "$REPO_R" "$HOME_R" "$ROOT_R" --configs --components claude
+expect_fail  "restore claude stops when ~/.claude-own/hooks links to the FNA hooks"
+for f in "${CLAUDE_HOOKS[@]}"; do
+    expect_copy "... leaving ~/.claude-fna/hooks/$f intact" "$REPO_R/home/claude-code/hooks/$f" "$HOME_R/.claude-fna/hooks/$f"
+done
+
+echo "== restore: the root can come from the declaration file =="
+HOME_D="$RS/d"; ROOT_D="$HOME_D/Projects"
+mkdir -p "$ROOT_D" "$HOME_D/.config/environment.d"
+make_restore_repo "$ROOT_D"
+printf 'PROJECTS_ROOT=${HOME}/Projects\n' > "$HOME_D/.config/environment.d/50-projects-root.conf"
+run_restore "$ROOT_D/system_settings" "$HOME_D" "" --configs --components codex
+expect_rc    "restore resolves a declared \${HOME}/Projects root when none is exported" 0
+expect_equal "... and the installed config.toml trusts ~/Projects/ActiveProjects/OWN/portwatch" \
+    "$(trust_count "$HOME_D/.codex-own/config.toml" "$ROOT_D")" 1
+
+echo "== restore: without jq, claude stops before installing anything (KTD10) =="
+fresh_home "$HOME_R"
+NOJQ=1 run_restore "$REPO_R" "$HOME_R" "$ROOT_R" --configs --components claude
+expect_fail  "restore claude with no jq on PATH fails"
+expect_has   "... with an error naming jq" "jq" "$(grep -F ERROR <<<"$OUT")"
+expect_absent "... installing no hook" "$HOME_R/.claude-fna/hooks"
+expect_absent "... and no settings.json" "$HOME_R/.claude-own/settings.json"
+expect_empty_home "... nor anything else" "$HOME_R"
+
+echo "== restore: fish installs the tracked fish files (KTD14) =="
+mkdir -p "$REPO_R/home/.config/fish/conf.d"
+printf '# projects-root loader fixture\n' > "$REPO_R/home/.config/fish/conf.d/projects-root.fish"
+fresh_home "$HOME_R"
+run_restore "$REPO_R" "$HOME_R" "$ROOT_R" --configs --components fish
+expect_rc "restore fish succeeds" 0
+for rel in "${FISH_FILES[@]}"; do
+    expect_copy "~/$rel is the repo copy" "$REPO_R/home/$rel" "$HOME_R/$rel"
+done
+rm "$REPO_R/home/.config/fish/conf.d/projects-root.fish"
+fresh_home "$HOME_R"
+run_restore "$REPO_R" "$HOME_R" "$ROOT_R" --configs --components fish
+expect_rc    "restore fish succeeds when the repo has no projects-root loader" 0
+expect_has   "... reporting the loader as skipped" "skip" "$(grep -F conf.d/projects-root.fish <<<"$OUT")"
+expect_absent "... installing no loader" "$HOME_R/.config/fish/conf.d/projects-root.fish"
+for rel in "${FISH_FILES[@]:0:2}"; do
+    expect_copy "... and still installing ~/$rel" "$REPO_R/home/$rel" "$HOME_R/$rel"
+done
+reset_repo "$REPO_R"
 
 echo
 echo "Passed: $PASSED, failed: $FAILED"
