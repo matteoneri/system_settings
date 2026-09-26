@@ -9,16 +9,27 @@
 #   ./restore.sh --packages                         # Arch packages only
 #   ./restore.sh --configs                          # all desktop config components
 #   ./restore.sh --configs --components shell,vim,git
+#   ./restore.sh --configs --components fish        # claude/codex wrappers + projects-root loader
 #   ./restore.sh --list-components
+#
+# Every run except --help and --list-components needs the projects root: an
+# exported PROJECTS_ROOT, or a PROJECTS_ROOT= line in
+# ~/.config/environment.d/50-projects-root.conf, other than $HOME itself. This
+# repo must be <root>/system_settings (or a git worktree inside it). Otherwise
+# restore stops before installing or writing anything.
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 HOME_DIR="$REPO_DIR/home"
+# shellcheck source=lib/projects-root.sh
+source "$REPO_DIR/lib/projects-root.sh"
+ROOT=""  # the projects root, resolved after argument parsing
 
 # Components run by --all / --configs (the Arch desktop workstation set).
 # `shell` (portable) is intentionally absent — use --components shell on minimal hosts.
 ALL_CONFIG_COMPONENTS=(
     shell-desktop
+    fish
     vim
     git
     x11
@@ -41,6 +52,7 @@ ALL_CONFIG_COMPONENTS=(
 KNOWN_COMPONENTS=(
     shell          # portable .zshrc + starship + zoxide + oh-my-zsh; apt or pacman
     shell-desktop  # full .zshrc + zkstack completion + oh-my-zsh; Arch
+    fish           # claude/codex wrappers + projects-root loader into ~/.config/fish
     vim            # ensure vim is installed; apt or pacman
     git            # .gitconfig + user.name/email
     x11            # .Xresources + xrdb merge
@@ -53,8 +65,8 @@ KNOWN_COMPONENTS=(
     pacman-conf    # /etc/pacman.conf via ~/.config/pacman
     paru-conf
     autostart
-    claude         # merge Claude Code prefs into ~/.claude-{own,fna}
-    codex          # config + AGENTS.md into ~/.codex-{own,fna} + shared memory
+    claude         # settings, CLAUDE.md, scripts, hooks into ~/.claude-{own,fna}; prefs once logged in
+    codex          # config + AGENTS.md into ~/.codex-{own,fna} + shared memory, root filled in
     screenlayout
     dev-tools      # pyenv, rustup, nvm
 )
@@ -91,6 +103,19 @@ _contains() {
     local item
     for item in "$@"; do [[ "$item" == "$needle" ]] && return 0; done
     return 1
+}
+
+# _fill SRC DEST: install SRC with every @PROJECTS_ROOT@ replaced by the root.
+# DEST is replaced only once complete; the library names the file on failure.
+_fill() {
+    projects_root_fill "$ROOT" "$1" "$2" || exit 1
+}
+
+# _copy_keep_exec SRC DEST: copy SRC, and make DEST executable when SRC is
+# (cp alone keeps an existing DEST's mode).
+_copy_keep_exec() {
+    cp "$1" "$2"
+    if [[ -x "$1" ]]; then chmod +x "$2"; fi
 }
 
 # ── package install (Arch only) ──────────────────────────────────
@@ -158,6 +183,24 @@ restore_shell_desktop() {
         echo "    Installing oh-my-zsh..."
         RUNZSH=no CHSH=no sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
     fi
+}
+
+# Only the tracked fish files (KTD14), never the whole functions directory. A
+# file this checkout lacks is reported and skipped.
+restore_fish() {
+    echo "==> fish..."
+    local rel
+    for rel in .config/fish/functions/claude.fish \
+               .config/fish/functions/codex.fish \
+               .config/fish/conf.d/projects-root.fish; do
+        if [[ ! -f "$HOME_DIR/$rel" ]]; then
+            echo "    skip (not in repo): home/$rel"
+            continue
+        fi
+        mkdir -p "$HOME/$(dirname "$rel")"
+        cp "$HOME_DIR/$rel" "$HOME/$rel"
+        echo "    Wrote ~/$rel"
+    done
 }
 
 restore_vim() {
@@ -263,35 +306,91 @@ restore_autostart() {
     cp "$HOME_DIR/.config/autostart/"*.desktop "$HOME/.config/autostart/" 2>/dev/null || true
 }
 
+# _install_whole SRC DEST: replace DEST with a copy of SRC, SRC's mode included,
+# in one rename, so a reader opening DEST meanwhile gets the old file or the new
+# one, never half of one.
+_install_whole() {
+    local tmp
+    tmp="$(mktemp -- "$(dirname -- "$2")/.$(basename -- "$2").XXXXXX")" || exit 1
+    if cp -- "$1" "$tmp" && chmod --reference="$1" -- "$tmp" && mv -fT -- "$tmp" "$2"; then
+        return 0
+    fi
+    rm -f -- "$tmp"
+    echo "ERROR: could not install $2 from $1; $2 is unchanged" >&2
+    exit 1
+}
+
+# The credential hooks live once in the repo (KTD11): real files under
+# ~/.claude-fna/hooks/, and each ~/.claude-own/hooks/ entry a link to its FNA
+# counterpart. The hook finds protected-paths.txt beside the path it was run
+# by, so the list is linked too. Claude Code runs a hook on every tool call and
+# lets the call through when the hook fails, so each file lands whole; ln -sfn
+# swaps each link in by rename too.
+_install_claude_hooks() {
+    local src name
+    mkdir -p "$HOME/.claude-fna/hooks" "$HOME/.claude-own/hooks"
+    for src in "$HOME_DIR/claude-code/hooks/"*; do
+        name="${src##*/}"
+        _install_whole "$src" "$HOME/.claude-fna/hooks/$name"
+        ln -sfn "$HOME/.claude-fna/hooks/$name" "$HOME/.claude-own/hooks/$name"
+    done
+    echo "    Installed the credential hooks into ~/.claude-fna/hooks, linked from ~/.claude-own/hooks"
+}
+
+# Merge the tracked preferences into an account's .claude.json, which only
+# exists once the account has logged in.
+_merge_claude_prefs() {
+    local acct="$1" target prefs
+    target="$HOME/.claude-${acct}/.claude.json"
+    prefs="$HOME_DIR/claude-code/${acct}/preferences.json"
+    if [[ ! -f "$prefs" ]]; then
+        echo "    No preferences.json for claude-${acct} in this checkout; nothing to merge"
+    elif [[ -f "$target" ]]; then
+        python3 - "$target" "$prefs" <<'EOF'
+import json, sys
+target, prefs = sys.argv[1], sys.argv[2]
+with open(target) as f: data = json.load(f)
+with open(prefs) as f: data.update(json.load(f))
+with open(target, 'w') as f: json.dump(data, f, indent=2); f.write('\n')
+EOF
+        echo "    Merged preferences into $target"
+    else
+        echo "    Preferences not merged into claude-${acct} (log in first with: CLAUDE_CONFIG_DIR=~/.claude-${acct} claude, then run --components claude again)"
+    fi
+}
+
+# Everything but the preferences installs whether or not the account has
+# logged in (KTD10). The hooks go first: settings.json calls them on every
+# tool call.
 restore_claude() {
     echo "==> claude..."
-    mkdir -p "$HOME/.claude-own" "$HOME/.claude-fna"
+    if ! _have jq; then
+        echo "ERROR: the claude component needs jq: the credential hook its settings call parses every tool call with jq and blocks the call without it. Install jq (on Arch: sudo pacman -S jq), then run restore.sh again. Nothing was installed for claude." >&2
+        exit 1
+    fi
+    _install_claude_hooks
+    local acct dir
     for acct in own fna; do
-        target="$HOME/.claude-${acct}/.claude.json"
-        prefs="$HOME_DIR/claude-code/${acct}/preferences.json"
-        if [ -f "$target" ] && [ -f "$prefs" ]; then
-            python3 -c "
-import json
-with open('$target') as f: data = json.load(f)
-with open('$prefs') as f: prefs = json.load(f)
-data.update(prefs)
-with open('$target', 'w') as f: json.dump(data, f, indent=2); f.write('\n')
-"
-            echo "    Merged preferences into $target"
-        else
-            echo "    Skipping claude-${acct} (log in first with: CLAUDE_CONFIG_DIR=~/.claude-${acct} claude)"
-        fi
+        dir="$HOME/.claude-${acct}"
+        mkdir -p "$dir"
+        _copy_keep_exec "$HOME_DIR/claude-code/${acct}/statusline.sh" "$dir/statusline.sh"
+        _copy_keep_exec "$HOME_DIR/claude-code/${acct}/title-hook.sh" "$dir/title-hook.sh"
+        _fill "$HOME_DIR/claude-code/${acct}/CLAUDE.md" "$dir/CLAUDE.md"
+        _fill "$HOME_DIR/claude-code/${acct}/settings.json" "$dir/settings.json"
+        echo "    Wrote settings.json, CLAUDE.md, statusline.sh and title-hook.sh into ~/.claude-${acct}"
+        _merge_claude_prefs "$acct"
     done
 }
 
 restore_codex() {
     echo "==> codex..."
     mkdir -p "$HOME/.codex-own" "$HOME/.codex-fna" "$HOME/.codex-shared/skills"
+    local acct
     for acct in own fna; do
-        cp "$HOME_DIR/codex/${acct}/config.toml" "$HOME/.codex-${acct}/config.toml"
-        cp "$HOME_DIR/codex/${acct}/AGENTS.md" "$HOME/.codex-${acct}/AGENTS.md"
+        _fill "$HOME_DIR/codex/${acct}/config.toml" "$HOME/.codex-${acct}/config.toml"
+        _fill "$HOME_DIR/codex/${acct}/AGENTS.md" "$HOME/.codex-${acct}/AGENTS.md"
     done
-    cp "$HOME_DIR/codex/shared/MEMORY.md" "$HOME/.codex-shared/MEMORY.md"
+    _fill "$HOME_DIR/codex/shared/MEMORY.md" "$HOME/.codex-shared/MEMORY.md"
     # The shell wrapper always sets CODEX_HOME; this symlink is what a codex started
     # outside it (an i3 restore, a script) falls back to.
     [ -e "$HOME/.codex" ] || ln -s .codex-own "$HOME/.codex"
@@ -377,7 +476,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --list-components)   list_components; exit 0 ;;
         -h|--help)
-            sed -n '2,12p' "$0"
+            sed -n '2,19p' "$0"
             exit 0
             ;;
         *)
@@ -387,6 +486,18 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# ── projects root ────────────────────────────────────────────────
+# Resolve before the package step and every component, so an unset or wrong
+# root stops the run before anything is installed or written (R4). A root that
+# does not hold this repo as its system_settings would fill the configs in with
+# paths that lead nowhere (R3).
+ROOT="$(projects_root_resolve)" || exit 1
+if ! projects_root_check_repo "$ROOT" "$REPO_DIR"; then
+    echo "Nothing was restored." >&2
+    exit 1
+fi
+echo "==> Projects root: $ROOT"
 
 # ── run ──────────────────────────────────────────────────────────
 $do_packages && install_packages

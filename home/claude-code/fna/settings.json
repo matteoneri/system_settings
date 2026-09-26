@@ -40,7 +40,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Bash",
+        "matcher": "Bash|Monitor",
         "hooks": [
           {
             "type": "command",
@@ -97,7 +97,7 @@
     "claude-code-terminal-title": {
       "source": {
         "source": "directory",
-        "path": "/home/matteo/Documents/Projects/ActiveProjects/OWN/claude-code-terminal-title"
+        "path": "@PROJECTS_ROOT@/ActiveProjects/OWN/claude-code-terminal-title"
       }
     }
   },

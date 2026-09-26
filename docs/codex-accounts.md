@@ -40,9 +40,11 @@ a flat `skills/<name>/SKILL.md`, so a nested shared directory is not picked up.
 ## Tracked in this repo
 
 `sync.sh` copies `config.toml` and `AGENTS.md` from each home into
-`home/codex/{own,fna}/`, and the shared memory into `home/codex/shared/`. Credentials
-live in `auth.json`, which is never copied. `restore.sh codex` puts them back, creates
-the `~/.codex` symlink, and tells you to authenticate each account.
+`home/codex/{own,fna}/`, and the shared memory into `home/codex/shared/`, swapping the
+machine's projects root for `@PROJECTS_ROOT@` on the way (see `docs/projects-root.md`).
+Credentials live in `auth.json`, which is never copied. `restore.sh codex` puts them
+back with the root filled in, creates the `~/.codex` symlink, and tells you to
+authenticate each account.
 
 ## Setting up a second account from scratch
 

@@ -67,7 +67,7 @@ Toolchain is rustup-managed; these four live in `~/.cargo/bin`, with aliases in 
 | `cargo-machete` | unused-dependency scan | `cargo unused` |
 
 Use all four where they improve the flow. Two need per-project config — copy the canonical
-versions from `~/Documents/Projects/system_settings/templates/rust/`:
+versions from `@PROJECTS_ROOT@/system_settings/templates/rust/`:
 
 - **`.config/nextest.toml`** at the workspace root. Nextest has **no** user-level config, so
   every workspace needs its own. Ships a `default` profile for local runs and a `ci` profile

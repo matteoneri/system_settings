@@ -9,10 +9,10 @@ approval_policy = "never"
 default_permissions = "all-worktrees"
 service_tier = "default"
 
-[projects."/home/matteo/Documents/Projects/ActiveProjects/FNA/fnet/fnet-presettle"]
+[projects."@PROJECTS_ROOT@/ActiveProjects/FNA/fnet/fnet-presettle"]
 trust_level = "trusted"
 
-[projects."/home/matteo/Documents/Projects/ActiveProjects/OWN/portwatch"]
+[projects."@PROJECTS_ROOT@/ActiveProjects/OWN/portwatch"]
 trust_level = "trusted"
 
 [projects."/home/matteo"]
@@ -60,7 +60,7 @@ extends = ":workspace"
 # Cargo targets and worktrees live here; see ~/.cargo/config.toml for why
 # incremental is off (sccache cannot cache an incremental compilation).
 # `.git` lets `git worktree add` register the new tree in `.git/worktrees/`.
-"/home/matteo/Documents/Projects/ActiveProjects/FNA/fnet/fnet-presettle/.git" = "write"
+"@PROJECTS_ROOT@/ActiveProjects/FNA/fnet/fnet-presettle/.git" = "write"
 # The worktrees themselves live outside the workspace, so `:workspace` does not cover them.
 "/home/matteo/.cache/fnet-wt" = "write"
 # Cargo targets. Never /tmp: it is a 32 GB tmpfs and a clean target here is ~65 GB.
@@ -69,7 +69,7 @@ extends = ":workspace"
 # 2026-08-25 so a release session can provision AND destroy the box in one cycle
 # (CLAUDE.md agent rule 7, as amended). Scoped to this state only — the sibling
 # ../EC2 GPU state stays read-only so no session can address the live ds_ec2_gpu box.
-"/home/matteo/Documents/Projects/ActiveProjects/FNA/terraform-gpu/EC2-fnet-replay" = "write"
+"@PROJECTS_ROOT@/ActiveProjects/FNA/terraform-gpu/EC2-fnet-replay" = "write"
 
 [permissions.fnet-worktrees.network]
 enabled = true
@@ -87,9 +87,9 @@ extends = "fnet-worktrees"
 [permissions.all-worktrees.filesystem]
 # `.git` lets `git worktree add` register a new tree in `.git/worktrees/` when the
 # session is launched from a worktree under `.worktrees/` (outside its workspace root).
-"/home/matteo/Documents/Projects/ActiveProjects/OWN/portwatch/.git" = "write"
+"@PROJECTS_ROOT@/ActiveProjects/OWN/portwatch/.git" = "write"
 # Worktrees live inside the repo; a session launched from one still needs the others' parent.
-"/home/matteo/Documents/Projects/ActiveProjects/OWN/portwatch/.worktrees" = "write"
+"@PROJECTS_ROOT@/ActiveProjects/OWN/portwatch/.worktrees" = "write"
 # pre-merge-check baselines
 "/home/matteo/.cache/portwatch" = "write"
 

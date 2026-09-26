@@ -1,3 +1,80 @@
+# Projects root: PROJECTS_ROOT is this machine's projects folder, the one that
+# holds ActiveProjects/ and system_settings/. An exported value wins; otherwise
+# the last PROJECTS_ROOT= line of ~/.config/environment.d/50-projects-root.conf,
+# the file the systemd user session reads too. These are the rules of
+# projects_root_resolve in system_settings' lib/projects-root.sh, which this
+# file cannot source (the repo's own path comes from the root), so keep the two
+# in step: surrounding whitespace and one pair of quotes are stripped as systemd
+# does, a leading ~, $HOME or ${HOME} expands, the path is normalised, and a
+# relative path, / or a missing directory is refused. Unresolved, PROJECTS_ROOT
+# is unset so the steps below that need it skip, and an interactive terminal
+# gets one warning line. Nothing prints anywhere else: Claude Code snapshots
+# these functions into non-interactive tool shells.
+
+# Set REPLY to the value of FILE's last PROJECTS_ROOT= line; 1 when it has none.
+_projects_root_declared() {
+    emulate -L zsh
+    setopt extendedglob
+    local line found=1
+    [[ -r $1 ]] || return 1
+    while IFS= read -r line || [[ -n $line ]]; do
+        if [[ $line == [[:space:]]#PROJECTS_ROOT[[:space:]]#=* ]]; then
+            REPLY=${line#*=}
+            found=0
+        fi
+    done < $1
+    (( found == 0 )) || return 1
+    REPLY=${${REPLY##[[:space:]]##}%%[[:space:]]##}
+    [[ $REPLY == (\"*\"|\'*\') ]] && REPLY=${REPLY[2,-2]}
+    return 0
+}
+
+# Set REPLY to VALUE expanded and normalised, or to why it is refused and
+# return 1. ORIGIN (exported or declared) goes into that message.
+_projects_root_normalise() {
+    emulate -L zsh
+    local value=$1 origin=$2 root
+    case $value in
+        ('~'|'~/'*)             value=$HOME${value:1} ;;
+        ('$HOME'|'$HOME/'*)     value=$HOME${value:5} ;;
+        ('${HOME}'|'${HOME}/'*) value=$HOME${value:7} ;;
+    esac
+    if [[ $value != /* ]]; then
+        REPLY="PROJECTS_ROOT='$value' ($origin) is not an absolute path"
+        return 1
+    fi
+    root=$(command realpath -s -m -- $value 2>/dev/null)
+    if [[ -z $root || $root == / ]]; then
+        REPLY="PROJECTS_ROOT='$value' ($origin) does not name a projects folder"
+        return 1
+    fi
+    if [[ ! -d $root ]]; then
+        REPLY="PROJECTS_ROOT='$root' ($origin) is not an existing directory"
+        return 1
+    fi
+    REPLY=$root
+}
+
+_projects_root_load() {
+    emulate -L zsh
+    local file=$HOME/.config/environment.d/50-projects-root.conf REPLY origin
+    if [[ -n $PROJECTS_ROOT ]]; then
+        REPLY=$PROJECTS_ROOT origin=exported
+    elif _projects_root_declared $file; then
+        origin=declared
+    else
+        REPLY='PROJECTS_ROOT is not set (neither exported nor declared)'
+    fi
+    if [[ -n $origin ]] && _projects_root_normalise $REPLY $origin; then
+        export PROJECTS_ROOT=$REPLY
+        return 0
+    fi
+    unset PROJECTS_ROOT
+    [[ -o interactive && -t 0 ]] || return 0
+    print -ru2 -- $'\e[1;33m[projects-root]\e[0m '"$REPLY; skipping the system_settings sync check and terminal titles. Declare it in $file with a line like PROJECTS_ROOT=\${HOME}/path/to/projects (an exported PROJECTS_ROOT takes precedence over the file)."
+}
+_projects_root_load
+
 # Oh My Zsh
 export ZSH="$HOME/.oh-my-zsh"
 ZSH_THEME=""
@@ -194,11 +271,13 @@ _ask_yn() {
 # Weekly system settings sync check. Interactive terminals only, and Ctrl-C
 # returns from the function rather than aborting the rest of this file -- the
 # same two guards the mirror prompt below carries, for the same reasons.
+# Skipped when PROJECTS_ROOT is unset; the loader at the top has warned.
 _settings_sync_check() {
     [[ -o interactive && -t 0 ]] || return 0
+    [[ -n "$PROJECTS_ROOT" ]] || return 0
     setopt localtraps
     trap 'return 1' INT
-    local sync_dir="$HOME/Documents/Projects/system_settings"
+    local sync_dir="$PROJECTS_ROOT/system_settings"
     local stamp="$sync_dir/.last_sync"
     local now=$(date +%s)
     local week=$((7 * 24 * 60 * 60))
@@ -206,7 +285,12 @@ _settings_sync_check() {
     if [[ ! -f "$stamp" ]] || (( now - $(cat "$stamp") > week )); then
         echo "\n\033[1;33m[system_settings]\033[0m Last sync was over a week ago."
         if _ask_yn "Run sync now? [y/N] "; then
-            "$sync_dir/sync.sh"
+            # A sync that stops has written nothing: offer no commit and keep
+            # the old stamp, so the next terminal asks again.
+            if ! "$sync_dir/sync.sh"; then
+                echo "sync.sh stopped; nothing to commit. The next terminal will ask again."
+                return 1
+            fi
             # Check if there are changes to commit
             if [[ -n "$(git -C "$sync_dir" status --porcelain)" ]]; then
                 echo ""
@@ -275,8 +359,11 @@ eval "$(starship init zsh)"
 
 # Claude Code terminal titles: keep the task title Claude sets, instead of letting
 # oh-my-zsh re-title on every prompt. Sourced last so its precmd hook runs after
-# starship's and wins. See ~/Documents/Projects/ActiveProjects/OWN/claude-code-terminal-title
-source "$HOME/Documents/Projects/ActiveProjects/OWN/claude-code-terminal-title/shell/terminal-title.zsh"
+# starship's and wins. The hook ships with the claude-code-terminal-title project
+# in $PROJECTS_ROOT/ActiveProjects/OWN; skipped when PROJECTS_ROOT is unset or the
+# project is not checked out.
+[[ -n "$PROJECTS_ROOT" && -f "$PROJECTS_ROOT/ActiveProjects/OWN/claude-code-terminal-title/shell/terminal-title.zsh" ]] \
+    && source "$PROJECTS_ROOT/ActiveProjects/OWN/claude-code-terminal-title/shell/terminal-title.zsh"
 
 # CBUAE Windows VM control: cbuae up|down|console|status|restart|kill|shot
 source "$HOME/VMs/cbuae-vm.zsh"
