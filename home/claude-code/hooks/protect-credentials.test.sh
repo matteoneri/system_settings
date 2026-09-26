@@ -57,6 +57,17 @@ for p in "$H/.ssh/id_rsa" "$H/.gnupg/secring.gpg" "$H/.aws/credentials" "$H/.azu
          "$H/.config/chromium/Default/Extensions/abc/1/manifest.json" \
          "$H/.mozilla/firefox/profile.default/key4.db"; do read_t DENY "$p"; done
 
+echo "== Chromium-family profiles are protected whole, like Firefox's"
+# Wallet extensions (MetaMask, Rabby) keep their vaults beside Extensions/, in
+# Local Extension Settings/ and IndexedDB/; saved logins and cookies sit in
+# the profile root.
+for p in "$H/.config/BraveSoftware/Brave-Origin/Default/Local Extension Settings/nkbihfbeogaeaoehlefnkodbefgpgknn/000003.log" \
+         "$H/.config/BraveSoftware/Brave-Browser/Default/IndexedDB/chrome-extension_acmacodkjbdgmoleebolmdjonilkdbch_0.indexeddb.leveldb/000005.ldb" \
+         "$H/.config/BraveSoftware/Brave-Browser/Default/Login Data" \
+         "$H/.config/google-chrome/Default/Cookies" \
+         "$H/.config/chromium/Default/Local Extension Settings/x/000003.log"; do read_t DENY "$p"; done
+read_t OK "$H/.config/brave-origin-flags.conf"   # a sibling of the profile folder, not inside it
+
 echo "== the same locations named from Bash"
 for c in "cat $H/.ssh/id_rsa" "cd ~ && cat .ssh/id_rsa" "cd ~/.ssh && cat id_rsa" "ls -la ~/.ssh" \
          "cat \$HOME/.aws/credentials" "grep -r token ~/.config/gh" "cat ~/.git-credentials" \
@@ -112,7 +123,7 @@ search_t DENY Grep "~" /tmp
 search_t DENY Grep / /tmp
 search_t DENY Grep "$(dirname "$H")" /tmp
 search_t DENY Grep "$H/.config" /tmp          # ~/.config/gh/** lives below it
-search_t DENY Grep "$H/.config/google-chrome/Default" /tmp   # .../**/Extensions/** can sit below it
+search_t DENY Grep "$H/Library/Application Support/Google" /tmp   # .../**/metamask*/** can sit below it
 search_t DENY Glob "$H" /tmp
 search_t DENY Glob - "$H"
 search_t OK   Grep "$(dirname "$proj")" /tmp  # an ancestor of projects, but of no protected location
