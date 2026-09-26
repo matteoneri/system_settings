@@ -22,6 +22,24 @@ t() {   # t EXPECT TOOL JSON_INPUT LABEL
 }
 read_t()  { t "$1" Read "$(jq -cn --arg p "$2" '{tool_name:"Read",tool_input:{file_path:$p},cwd:"/tmp"}')" "Read $2"; }
 bash_t()  { t "$1" Bash "$(jq -cn --arg c "$2" '{tool_name:"Bash",tool_input:{command:$c},cwd:"/tmp"}')" "Bash $2"; }
+mon_t()   { t "$1" Monitor "$(jq -cn --arg c "$2" '{tool_name:"Monitor",tool_input:{command:$c,description:"test",timeout_ms:1000},cwd:"/tmp"}')" "Monitor $2"; }
+search_t() {   # search_t EXPECT Grep|Glob PATH CWD — PATH "-" leaves the path input out
+    local input
+    input=$(jq -cn --arg t "$2" --arg p "$3" --arg c "$4" \
+        '{tool_name:$t, cwd:$c, tool_input:({pattern:(if $t == "Glob" then "**/*.pem" else "aws_secret" end)}
+                                            + (if $p == "-" then {} else {path:$p} end))}')
+    t "$1" "$2" "$input" "$2 path=$3 cwd=$4"
+}
+list_rc() {    # list_rc LIST LABEL — the hook must exit 2 and name LIST on stderr
+    local out
+    out=$(printf '%s' '{"tool_name":"Read","tool_input":{"file_path":"/tmp/x"},"cwd":"/tmp"}' \
+          | FNET_PROTECTED_PATHS=$1 "$hook" 2>&1 >/dev/null; echo "rc=$?")
+    case $out in
+        *"$1"*rc=2) pass=$((pass+1)); printf '  ok    rc=2 %s\n' "$2";;
+        *) fail=$((fail+1)); printf 'FAIL want rc=2 naming the list, got [%s] %s\n' "$out" "$2";;
+    esac
+}
+etc_list() { printf '/etc/passwd\n'; }   # a protected file every Linux box has, for machine-independent glob cases
 
 echo "== one case per former Read() deny rule, via the Read tool"
 for p in "$H/.ssh/id_rsa" "$H/.gnupg/secring.gpg" "$H/.aws/credentials" "$H/.azure/msal_token_cache.json" \
@@ -85,8 +103,65 @@ t OK   Glob "$(jq -cn --arg p "$proj" '{tool_name:"Glob",tool_input:{pattern:"**
 t DENY Read "$(jq -cn '{tool_name:"Read",tool_input:{file_path:".ssh/id_rsa"},cwd:"/home/matteo"}')" "Read relative .ssh/id_rsa from HOME"
 t DENY Read "$(jq -cn '{tool_name:"Read",tool_input:{file_path:"/home/matteo/Documents/../.ssh/id_rsa"},cwd:"/tmp"}')" "Read via .. traversal"
 
+echo "== Grep/Glob over an ANCESTOR of a protected location (the search would descend into it)"
+search_t DENY Grep "$H" /tmp
+search_t DENY Grep - "$H"                     # no path: the search runs from cwd
+search_t DENY Grep "" "$H"                    # an empty path means cwd too
+search_t DENY Grep . "$H"
+search_t DENY Grep "~" /tmp
+search_t DENY Grep / /tmp
+search_t DENY Grep "$(dirname "$H")" /tmp
+search_t DENY Grep "$H/.config" /tmp          # ~/.config/gh/** lives below it
+search_t DENY Grep "$H/.config/google-chrome/Default" /tmp   # .../**/Extensions/** can sit below it
+search_t DENY Glob "$H" /tmp
+search_t DENY Glob - "$H"
+search_t OK   Grep "$(dirname "$proj")" /tmp  # an ancestor of projects, but of no protected location
+search_t OK   Grep "$H/.config/nvim" /tmp     # a sibling of the protected ~/.config entries
+search_t OK   Grep - "$proj"
+search_t OK   Glob - "$proj"
+read_t   OK   "$H/.bashrc"                    # the ancestor rule is for searches only
+read_t   OK   "$proj/README.md"
+
+echo "== Monitor runs shell commands too"
+mon_t DENY "cat ~/.ssh/id_rsa"
+mon_t DENY "tail -f ~/.aws/credentials"
+mon_t OK   "tail -f /var/log/app.log | grep --line-buffered ERROR"
+mon_t OK   ""
+t OK Monitor '{"tool_name":"Monitor","tool_input":{"ws":{"url":"wss://events.example.com/s"},"description":"x","timeout_ms":1000},"cwd":"/tmp"}' "Monitor ws source (no command)"
+bash_t OK ""
+
+echo "== Bash: quoting and escapes that rebuild a protected name"
+for c in "cat ~/.a''ws/credentials" 'cat ~/.a"w"s/credentials' 'cat ~/.a\ws/credentials' \
+         'cat $HOME/.s"s"h/id_x' "cat \"\$HOME\"/.a''ws/config" $'cat ~/.a\\\nws/credentials'; do bash_t DENY "$c"; done
+
+echo "== Bash: globs that expand onto a protected path"
+FNET_PROTECTED_PATHS=<(etc_list) bash_t DENY "cat /etc/pa?swd"
+FNET_PROTECTED_PATHS=<(etc_list) bash_t DENY "cat /et[c]/passwd"
+FNET_PROTECTED_PATHS=<(etc_list) bash_t DENY "wc -l </et?/passwd"
+FNET_PROTECTED_PATHS=<(etc_list) bash_t DENY "cat /etc/*/../pass*"      # .. is normalised
+FNET_PROTECTED_PATHS=<(etc_list) bash_t OK   "cat /etc/host*"
+if [ -d "$H/.aws" ]; then bash_t DENY "ls ~/.a?s"; bash_t DENY 'ls $HOME/.[a]ws'; else echo "  skip  no ~/.aws here"; fi
+if [ -d "$H/.ssh" ]; then bash_t DENY "ls ~/.ss[h]"; bash_t DENY 'ls ${HOME}/.s?h'; else echo "  skip  no ~/.ssh here"; fi
+if [ -e "$H/.aws/credentials" ]; then bash_t DENY "cat ~/.a?s/credentials"; else echo "  skip  no ~/.aws/credentials here"; fi
+if [ -e "$H/.ssh/config" ]; then bash_t DENY "cat ~/.ss[h]/config"; else echo "  skip  no ~/.ssh/config here"; fi
+for c in "ls ~/Documents/*.md" "echo configure aws later" "ls /tmp/*.log" "rg -n 'fn .*aws' src/" \
+         "ls \$HOME/.config/nvim/*.lua"; do bash_t OK "$c"; done
+# A glob matching thousands of files must stay far inside the hook's 10s
+# timeout (checking each result in bash took ~5s before the grep -F prefilter).
+start=$(date +%s%N)
+bash_t OK "ls /usr/*/*"
+ms=$(( ($(date +%s%N) - start) / 1000000 ))
+if [ "$ms" -lt 3000 ]; then pass=$((pass+1)); printf '  ok    %dms for a glob over %s files\n' "$ms" "$(compgen -G '/usr/*/*' | wc -l)"
+else fail=$((fail+1)); printf 'FAIL a glob over /usr/*/* took %dms (limit 3000)\n' "$ms"; fi
+
 echo "== the list file itself"
 t OK Bash "$(jq -cn '{tool_name:"Bash",tool_input:{command:"echo hi"},cwd:"/tmp"}')" "trivial command"
+list_rc /dev/null "an empty list must fail closed"
+list_rc <(printf '# only comments\n\n# here\n') "a comment-only list must fail closed"
+list_rc <(printf '# a comment\n  # an indented one\n') "an indented comment is a comment, not a pattern"
+list_rc <(printf '   \n\t\n') "a whitespace-only list must fail closed"
+FNET_PROTECTED_PATHS=<(printf '/etc/passwd  \n') t DENY Read '{"tool_name":"Read","tool_input":{"file_path":"/etc/passwd"},"cwd":"/tmp"}' "a pattern with trailing blanks still protects"
+FNET_PROTECTED_PATHS=<(printf '/etc/passwd') t DENY Read '{"tool_name":"Read","tool_input":{"file_path":"/etc/passwd"},"cwd":"/tmp"}' "a last line without a newline still protects"
 printf 'FNET_PROTECTED_PATHS pointing at a missing file must fail closed: '
 out=$(FNET_PROTECTED_PATHS=/nonexistent-list.txt bash -c 'printf "%s" "$(jq -cn "{tool_name:\"Read\",tool_input:{file_path:\"/tmp/x\"}}")" | '"$hook"'; echo "rc=$?"' 2>/dev/null)
 case $out in *rc=2*) pass=$((pass+1)); echo "ok (rc=2)";; *) fail=$((fail+1)); echo "FAIL got [$out]";; esac
