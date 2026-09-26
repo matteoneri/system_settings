@@ -15,7 +15,8 @@ function _projects_root_declared --argument-names file
     set -q values[1]; or return 1
     set -l value (string trim -- $values[-1])
     if string match -qr -- '^(".*"|\'.*\')$' "$value"
-        set value (string sub -s 2 -e -2 -- $value)
+        # fish's negative --end excludes that many characters: -1 drops the closing quote.
+        set value (string sub -s 2 -e -1 -- $value)
     end
     printf '%s\n' "$value"
 end
