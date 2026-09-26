@@ -12,6 +12,11 @@
 #                                    PROJECTS_ROOT= line of the declaration file.
 #                                    On failure print one ERROR line to stderr
 #                                    and return 1; the caller decides to exit.
+#   projects_root_check_repo ROOT REPO_DIR
+#                                    return 0 when REPO_DIR is ROOT/system_settings
+#                                    or inside it (a git worktree) and ROOT is
+#                                    not $HOME, comparing real paths; else print
+#                                    one ERROR line and return 1, as resolve does
 #   projects_root_fill ROOT SRC DEST replace every @PROJECTS_ROOT@ in SRC with
 #                                    ROOT, written to DEST ("-" for stdout)
 #   projects_root_swap ROOT SRC DEST replace every spelling of ROOT in SRC with
@@ -55,6 +60,29 @@ projects_root_resolve() {
         return 1
     fi
     _projects_root_normalise "$(_projects_root_expand "$value")" "$origin"
+}
+
+# A wrong but valid root defeats the swap and the scan: an ancestor of the real
+# root would swap every path under it into the placeholder, and $HOME gives no
+# ~/ spelling to swap or scan for.
+projects_root_check_repo() {
+    local root_real repo_real home_real
+    _projects_root_arity 2 $# "projects_root_check_repo ROOT REPO_DIR" || return 2
+    _projects_root_check_root "$1" || return 2
+    if ! root_real="$(realpath -e -- "$1" 2>/dev/null)" || ! repo_real="$(realpath -e -- "$2" 2>/dev/null)"; then
+        echo "ERROR: projects-root: cannot resolve root '$1' or repo '$2'" >&2
+        return 2
+    fi
+    home_real="$(realpath -e -- "${HOME-}" 2>/dev/null)" || home_real=""  # unset or missing: matches no root
+    if [[ "$root_real" == "$home_real" ]]; then
+        _projects_root_fail "PROJECTS_ROOT ($1) is the home directory itself, where the leak scan cannot tell the projects root from ordinary home paths; set it to the folder that holds system_settings"
+        return 1
+    fi
+    case "$repo_real" in
+        "$root_real/system_settings" | "$root_real/system_settings/"*) return 0 ;;
+    esac
+    _projects_root_fail "PROJECTS_ROOT ($1) does not hold this repo ($2): the repo must be <root>/system_settings or a git worktree inside it, so set PROJECTS_ROOT to the folder that holds system_settings"
+    return 1
 }
 
 projects_root_fill() {

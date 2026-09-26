@@ -14,8 +14,9 @@
 #
 # Every run except --help and --list-components needs the projects root: an
 # exported PROJECTS_ROOT, or a PROJECTS_ROOT= line in
-# ~/.config/environment.d/50-projects-root.conf. This repo must sit inside it.
-# Without it, restore stops before installing or writing anything.
+# ~/.config/environment.d/50-projects-root.conf, other than $HOME itself. This
+# repo must be <root>/system_settings (or a git worktree inside it). Otherwise
+# restore stops before installing or writing anything.
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -102,17 +103,6 @@ _contains() {
     local item
     for item in "$@"; do [[ "$item" == "$needle" ]] && return 0; done
     return 1
-}
-
-# Stop unless this repo sits below the projects root (R3). A wrong but valid
-# root would fill the configs in with paths that lead nowhere.
-_check_repo_under_root() {
-    local repo_real root_real
-    repo_real="$(cd "$REPO_DIR" && pwd -P)"
-    root_real="$(realpath -e -- "$ROOT")"
-    [[ "$repo_real" == "$root_real"/* ]] && return 0
-    echo "ERROR: this repo ($REPO_DIR) is not inside PROJECTS_ROOT ($ROOT). Set PROJECTS_ROOT to the folder that holds system_settings, exported or in $(projects_root_declaration_file). Nothing was restored." >&2
-    exit 1
 }
 
 # _fill SRC DEST: install SRC with every @PROJECTS_ROOT@ replaced by the root.
@@ -316,16 +306,32 @@ restore_autostart() {
     cp "$HOME_DIR/.config/autostart/"*.desktop "$HOME/.config/autostart/" 2>/dev/null || true
 }
 
+# _install_whole SRC DEST: replace DEST with a copy of SRC, SRC's mode included,
+# in one rename, so a reader opening DEST meanwhile gets the old file or the new
+# one, never half of one.
+_install_whole() {
+    local tmp
+    tmp="$(mktemp -- "$(dirname -- "$2")/.$(basename -- "$2").XXXXXX")" || exit 1
+    if cp -- "$1" "$tmp" && chmod --reference="$1" -- "$tmp" && mv -fT -- "$tmp" "$2"; then
+        return 0
+    fi
+    rm -f -- "$tmp"
+    echo "ERROR: could not install $2 from $1; $2 is unchanged" >&2
+    exit 1
+}
+
 # The credential hooks live once in the repo (KTD11): real files under
 # ~/.claude-fna/hooks/, and each ~/.claude-own/hooks/ entry a link to its FNA
 # counterpart. The hook finds protected-paths.txt beside the path it was run
-# by, so the list is linked too.
+# by, so the list is linked too. Claude Code runs a hook on every tool call and
+# lets the call through when the hook fails, so each file lands whole; ln -sfn
+# swaps each link in by rename too.
 _install_claude_hooks() {
     local src name
     mkdir -p "$HOME/.claude-fna/hooks" "$HOME/.claude-own/hooks"
     for src in "$HOME_DIR/claude-code/hooks/"*; do
         name="${src##*/}"
-        _copy_keep_exec "$src" "$HOME/.claude-fna/hooks/$name"
+        _install_whole "$src" "$HOME/.claude-fna/hooks/$name"
         ln -sfn "$HOME/.claude-fna/hooks/$name" "$HOME/.claude-own/hooks/$name"
     done
     echo "    Installed the credential hooks into ~/.claude-fna/hooks, linked from ~/.claude-own/hooks"
@@ -470,7 +476,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --list-components)   list_components; exit 0 ;;
         -h|--help)
-            sed -n '2,18p' "$0"
+            sed -n '2,19p' "$0"
             exit 0
             ;;
         *)
@@ -483,9 +489,14 @@ done
 
 # ── projects root ────────────────────────────────────────────────
 # Resolve before the package step and every component, so an unset or wrong
-# root stops the run before anything is installed or written (R4).
+# root stops the run before anything is installed or written (R4). A root that
+# does not hold this repo as its system_settings would fill the configs in with
+# paths that lead nowhere (R3).
 ROOT="$(projects_root_resolve)" || exit 1
-_check_repo_under_root
+if ! projects_root_check_repo "$ROOT" "$REPO_DIR"; then
+    echo "Nothing was restored." >&2
+    exit 1
+fi
 echo "==> Projects root: $ROOT"
 
 # ── run ──────────────────────────────────────────────────────────

@@ -49,8 +49,12 @@ covers the fish loader.
 A missing root is an error, never a guess.
 
 - `sync.sh` and `restore.sh` stop before changing anything, naming
-  `PROJECTS_ROOT` and the declaration file. They also stop when the repo does
-  not sit inside the root.
+  `PROJECTS_ROOT` and the declaration file. They also stop unless the repo is
+  `<root>/system_settings` (or a git worktree inside it) and the root is not
+  `$HOME` itself, comparing real paths (`projects_root_check_repo`). Any other
+  folder above the repo would make the swap turn every path under it into
+  `@PROJECTS_ROOT@`, and with the root at `$HOME` the leak scan cannot tell it
+  from ordinary home paths.
 - An interactive zsh or fish prints one warning line and skips the steps that
   need the root (the weekly sync check and terminal titles in zsh). Nothing
   prints in non-interactive shells, which Claude Code creates for its tools.

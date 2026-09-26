@@ -89,7 +89,7 @@ bash -c '
 RC=$?; OUT=""; ERR=""
 expect_rc "sourcing succeeds and leaves options, PROJECTS_ROOT and HOME alone" 0
 expect_file "sourcing prints nothing" "$SCRATCH/src/output" ""
-run_lib 'declare -F projects_root_declaration_file projects_root_resolve projects_root_fill projects_root_swap projects_root_scan projects_root_scan_placeholder >/dev/null && echo defined'
+run_lib 'declare -F projects_root_declaration_file projects_root_resolve projects_root_check_repo projects_root_fill projects_root_swap projects_root_scan projects_root_scan_placeholder >/dev/null && echo defined'
 expect_out "the public functions are defined" "defined"
 OUT="$(bash -c 'set -euo pipefail; source "$0"; source "$0"; echo "sourced"' "$LIB" 2>&1)"; RC=$?
 expect_out "sourcing twice under set -euo pipefail works" "sourced"
@@ -388,6 +388,56 @@ run_lib 'projects_root_scan_placeholder "$1"' "$C/empty"
 expect_rc  "an empty file passes" 0
 run_lib 'projects_root_scan_placeholder "$1"' "$C/missing"
 expect_rc  "a missing file fails closed, not clean" 2
+
+echo "== library: check the repo is <root>/system_settings =="
+K="$SCRATCH/chk"
+mkdir -p "$K/w x/Work/system_settings/.worktrees/feat" "$K/w x/Work/other" "$K/w x/Work/system_settings.bak" \
+    "$K/home/system_settings"
+ln -s "w x" "$K/wlink"
+ln -s home "$K/homelink"
+CHECK_REPO='projects_root_check_repo "$1" "$2"'
+run_lib "$CHECK_REPO" "$K/w x/Work" "$K/w x/Work/system_settings"
+expect_rc  "a repo at <root>/system_settings passes, for a root with a space whose basename is not Projects" 0
+expect_out "... silently" ""
+run_lib "$CHECK_REPO" "$K/w x/Work" "$K/w x/Work/system_settings/.worktrees/feat"
+expect_rc  "a git worktree inside <root>/system_settings passes" 0
+run_lib "$CHECK_REPO" "$K/wlink/Work" "$K/w x/Work/system_settings"
+expect_rc  "a root spelled through a symlink passes: real paths are compared" 0
+run_lib "$CHECK_REPO" "$K/w x/Work" "$K/wlink/Work/system_settings/"
+expect_rc  "... and so does a repo spelled through one" 0
+run_lib "$CHECK_REPO" "$K/w x/Work" "$K/w x/Work/other"
+expect_rc    "a repo directly under the root but not named system_settings fails" 1
+expect_out   "... printing nothing on stdout" ""
+expect_has   "... naming PROJECTS_ROOT and the root" "PROJECTS_ROOT ($K/w x/Work)" "$ERR"
+expect_has   "... naming the repo" "$K/w x/Work/other" "$ERR"
+expect_has   "... and the expected layout" "<root>/system_settings" "$ERR"
+expect_has   "... naming the declaration file" "$DECL" "$ERR"
+expect_has   "... with the neutral example line" 'PROJECTS_ROOT=${HOME}/path/to/projects' "$ERR"
+expect_lacks "... the example is not the Dell root" "Documents/Projects" "$ERR"
+if [[ "$(wc -l <<<"$ERR")" == 1 ]]; then pass "... in one message"; else fail "... in one message"; show; fi
+run_lib "$CHECK_REPO" "$K/w x/Work" "$K/w x/Work/system_settings.bak"
+expect_rc    "a sibling whose name starts with system_settings fails" 1
+run_lib "$CHECK_REPO" "$K/w x" "$K/w x/Work/system_settings"
+expect_rc    "the parent of the right root fails" 1
+expect_has   "... naming the expected layout" "<root>/system_settings" "$ERR"
+run_lib 'HOME="$3" projects_root_check_repo "$1" "$2"' "$K/home" "$K/home/system_settings" "$K/home"
+expect_rc    "a root equal to HOME fails, even with the repo at \$HOME/system_settings" 1
+expect_has   "... saying the leak scan cannot tell the root from home paths" "leak scan cannot tell" "$ERR"
+expect_has   "... naming the declaration file under that HOME" "$K/home/.config/environment.d/50-projects-root.conf" "$ERR"
+expect_has   "... with the neutral example line" 'PROJECTS_ROOT=${HOME}/path/to/projects' "$ERR"
+if [[ "$(wc -l <<<"$ERR")" == 1 ]]; then pass "... in one message"; else fail "... in one message"; show; fi
+run_lib 'HOME="$3" projects_root_check_repo "$1" "$2"' "$K/homelink" "$K/home/system_settings" "$K/home"
+expect_rc    "... also when the root spells HOME through a symlink" 1
+run_lib 'HOME="$3" projects_root_check_repo "$1" "$2"' "$K/home" "$K/home/system_settings" "$K/homelink/"
+expect_rc    "... or HOME is spelled through one" 1
+run_lib 'set -u; unset HOME; projects_root_check_repo "$1" "$2"' "$K/w x/Work" "$K/w x/Work/system_settings"
+expect_rc    "an unset HOME does not trip set -u, and matches no root" 0
+run_lib "$CHECK_REPO" "$K/w x/Work" "$K/missing"
+expect_rc    "a repo directory that does not exist is bad input" 2
+run_lib "$CHECK_REPO" "Work" "$K/w x/Work/system_settings"
+expect_rc    "a relative root is refused" 2
+run_lib 'projects_root_check_repo "$1"' "$K/w x/Work"
+expect_rc    "a missing argument is a usage error" 2
 
 # ── conversion: the tracked files that cannot read PROJECTS_ROOT ──
 # The nine templated files hold the placeholder instead of the root, and the
@@ -695,6 +745,40 @@ expect_equal "... and reaches the repo" "$(jq -c '.permissions.deny' "$REPO_A/ho
 reset_repo "$REPO_A"
 seed_home "$HOME_A" "$ROOT_A" "$REPO_A"
 
+echo "== sync: a filtered glob copies only the files that match =="
+mkdir -p "$HOME_A/.config/kitty/themes"
+printf 'background #101010\nforeground #e0e0e0\n' > "$HOME_A/.config/kitty/themes/custom.conf"
+printf 'not a theme\n' > "$HOME_A/.config/kitty/themes/notes.txt"
+run_sync "$REPO_A" "$HOME_A" "$ROOT_A"
+expect_rc "sync succeeds with a kitty theme present" 0
+if cmp -s "$HOME_A/.config/kitty/themes/custom.conf" "$REPO_A/home/.config/kitty/themes/custom.conf"; then
+    pass "... copying the *.conf theme to home/.config/kitty/themes/, byte for byte"
+else
+    fail "... copying the *.conf theme to home/.config/kitty/themes/, byte for byte"
+fi
+expect_absent "... and not the sibling that does not match *.conf" "$REPO_A/home/.config/kitty/themes/notes.txt"
+rm -r "$HOME_A/.config/kitty"
+reset_repo "$REPO_A"
+
+# Root ignores file modes, so the copy cannot be made to fail that way there.
+echo "== sync: a final copy that fails partway says the repo may be mixed =="
+if (( EUID == 0 )); then
+    echo "  skip: running as root, which ignores the read-only mode this case relies on"
+else
+    chmod 0444 "$REPO_A/packages-aur.txt"
+    run_sync "$REPO_A" "$HOME_A" "$ROOT_A"
+    chmod 0644 "$REPO_A/packages-aur.txt"
+    expect_fail  "a read-only file in the repo fails the sync"
+    expect_has   "... saying the copy into the repo failed partway" "failed partway" "$OUT"
+    expect_has   "... that the repo may hold a mix of old and new files" "mix of old and new files" "$OUT"
+    expect_has   "... how to see what changed" "git -C $(printf '%q' "$REPO_A") status" "$OUT"
+    expect_has   "... how to discard the partial copy" "git -C $(printf '%q' "$REPO_A") checkout -- ." "$OUT"
+    expect_has   "... and to run sync.sh again once the cause is fixed" "run sync.sh again" "$OUT"
+    expect_lacks "... never reporting it done" "Done." "$OUT"
+    expect_no_staging "... and removing its staging mirror"
+    reset_repo "$REPO_A"
+fi
+
 echo "== sync: an unresolved root stops before anything is staged (R4) =="
 run_sync "$REPO_A" "$HOME_A" ""
 expect_fail  "no exported and no declared root stops the sync"
@@ -711,6 +795,22 @@ expect_has   "... naming the repo" "$REPO_A" "$OUT"
 expect_has   "... and the root" "$SY/elsewhere" "$OUT"
 expect_not_staged "... before copying anything"
 expect_clean "... leaving the repo as committed" "$REPO_A"
+
+echo "== sync: a root above the repo's own, or equal to HOME, is refused =="
+run_sync "$REPO_A" "$HOME_A" "$SY/a b"
+expect_fail  "the parent of the right root stops the sync"
+expect_has   "... naming the expected layout" "<root>/system_settings" "$OUT"
+expect_has   "... and saying nothing was synced" "Nothing was synced." "$OUT"
+expect_not_staged "... before staging anything"
+expect_clean "... leaving the repo as committed" "$REPO_A"
+HOME_SH="$SY/home-is-root"
+make_repo "$HOME_SH"
+run_sync "$HOME_SH/system_settings" "$HOME_SH" "$HOME_SH"
+expect_fail  "a root equal to HOME stops the sync, even with the repo at \$HOME/system_settings"
+expect_has   "... saying the leak scan cannot tell the root from home paths" "leak scan cannot tell" "$OUT"
+expect_has   "... and nothing was synced" "Nothing was synced." "$OUT"
+expect_not_staged "... before staging anything"
+expect_clean "... leaving the repo as committed" "$HOME_SH/system_settings"
 
 # ── restore: restore.sh resolves the root first, then fills the configs in ──
 # Each case runs restore.sh from a plain copy of the repo files it reads,
@@ -808,6 +908,8 @@ run_restore "$REPO_R" "$HOME_R" "" --help
 expect_rc    "--help succeeds with PROJECTS_ROOT unset" 0
 expect_has   "... naming PROJECTS_ROOT" "PROJECTS_ROOT" "$OUT"
 expect_has   "... and the fish component" "fish" "$OUT"
+expect_has   "... printing the header through its last line" "restore stops before installing or writing anything." "$OUT"
+expect_lacks "... and no code" "set -euo pipefail" "$OUT"
 expect_empty_home "... and neither creates anything under HOME" "$HOME_R"
 
 echo "== restore: an unresolved root stops before any write (AE4, R4) =="
@@ -832,6 +934,25 @@ expect_empty_home "... creating nothing under HOME" "$HOME_R"
 run_restore "$REPO_R" "$HOME_R" "$RS/elsewhere" --packages
 expect_fail  "--packages alone is refused too"
 expect_no_calls "... before the package step starts"
+
+echo "== restore: a root above the repo's own, or equal to HOME, is refused =="
+fresh_home "$HOME_R"
+run_restore "$REPO_R" "$HOME_R" "$RS/a b" --configs --components claude,codex,fish
+expect_fail  "the parent of the right root stops the restore"
+expect_has   "... naming the expected layout" "<root>/system_settings" "$OUT"
+expect_has   "... and saying nothing was restored" "Nothing was restored." "$OUT"
+expect_empty_home "... creating nothing under HOME" "$HOME_R"
+run_restore "$REPO_R" "$HOME_R" "$RS/a b"
+expect_fail  "a bare restore.sh is refused too"
+expect_no_calls "... before the package step starts"
+expect_empty_home "... or any component writes" "$HOME_R"
+HOME_RH="$RS/home-is-root"
+make_restore_repo "$HOME_RH"
+run_restore "$HOME_RH/system_settings" "$HOME_RH" "$HOME_RH" --configs --components claude,codex,fish
+expect_fail  "a root equal to HOME stops the restore, even with the repo at \$HOME/system_settings"
+expect_has   "... saying the leak scan cannot tell the root from home paths" "leak scan cannot tell" "$OUT"
+expect_has   "... and nothing was restored" "Nothing was restored." "$OUT"
+expect_equal "... creating nothing under HOME beside the repo" "$(ls -A "$HOME_RH")" "system_settings"
 
 echo "== restore: claude and codex install their configs with the root filled in (AE1, R8, R11) =="
 fresh_home "$HOME_R"
@@ -903,6 +1024,29 @@ run_restore "$REPO_R" "$HOME_R" "$ROOT_R" --configs --components claude
 expect_rc    "a checkout without fna/preferences.json (it is gitignored) still restores" 0
 expect_has   "... reporting that there is nothing to merge, not 'log in first'" "No preferences.json for claude-fna" "$OUT"
 expect_file  "... leaving that account's .claude.json as it was" "$HOME_R/.claude-fna/.claude.json" $'{"userID": "fna"}\n'
+reset_repo "$REPO_R"
+
+# Claude Code runs the hooks on every tool call, so one may be reading a hook
+# while restore replaces it; it must never see a half-written file.
+echo "== restore: a re-run replaces each hook whole, never rewriting it in place =="
+HOOK_R="$HOME_R/.claude-fna/hooks/protect-credentials.sh"
+cp "$HOOK_R" "$RS/hook-before"
+printf '# a newer hook\n' >> "$REPO_R/home/claude-code/hooks/protect-credentials.sh"
+exec 3< "$HOOK_R"
+run_restore "$REPO_R" "$HOME_R" "$ROOT_R" --configs --components claude
+expect_rc "a re-run over installed hooks succeeds" 0
+if cmp -s "$RS/hook-before" - <&3; then
+    pass "... a reader that opened the old hook before the re-run still reads it whole"
+else
+    fail "... a reader that opened the old hook before the re-run still reads it whole"
+fi
+exec 3<&-
+expect_copy "... the installed hook is the new repo copy, executable" \
+    "$REPO_R/home/claude-code/hooks/protect-credentials.sh" "$HOOK_R"
+expect_link "... still linked from ~/.claude-own/hooks" \
+    "$HOME_R/.claude-own/hooks/protect-credentials.sh" "$HOOK_R"
+leftovers="$(find "$HOME_R/.claude-fna/hooks" -mindepth 1 -name '.*')"
+if [[ -z "$leftovers" ]]; then pass "... leaving no temporary file beside the hooks"; else fail "... leaving no temporary file beside the hooks: $leftovers"; fi
 reset_repo "$REPO_R"
 
 # Linking each own/ entry through such a directory would link a hook onto

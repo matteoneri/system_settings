@@ -4,8 +4,11 @@
 # Every output first lands in a staging mirror of the repo. The transforms run
 # there, the projects root is swapped back to @PROJECTS_ROOT@ in the templated
 # files, and every staged file is scanned for the root. The mirror is copied
-# into the repo only when every check passes, so a stop leaves the repo as it
-# was. A live source this machine lacks is skipped, and its repo copy kept.
+# into the repo only when every check passes, so a stop at any check leaves the
+# repo as it was. That final copy is the one write into the repo: if it fails
+# partway (disk full, permission denied), the repo may hold a mix of old and
+# new files, and sync says so and how to recover. A live source this machine
+# lacks is skipped, and its repo copy kept.
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -30,16 +33,6 @@ tildify() {
     else
         printf '%s' "$1"
     fi
-}
-
-# Stop unless this repo sits below the root. A wrong but valid root would
-# make the swap and the scan look for the wrong path and let the real one in.
-check_repo_under_root() {
-    local repo_real root_real
-    repo_real="$(cd "$REPO_DIR" && pwd -P)"
-    root_real="$(realpath -e -- "$ROOT")"
-    [[ "$repo_real" == "$root_real"/* ]] && return 0
-    die "this repo ($REPO_DIR) is not inside PROJECTS_ROOT ($ROOT). Set PROJECTS_ROOT to the folder that holds system_settings, exported or in $(projects_root_declaration_file). Nothing was synced."
 }
 
 # present SRC: succeed when the live source exists; else report the skip, and
@@ -125,8 +118,27 @@ scan_staged() {
     done < <(find "$STAGE" -type f -print0 | sort -z)
 }
 
+# Copy the checked mirror into the repo: the one write sync makes there. A
+# failure partway has replaced some files and not others, so say that and how
+# to recover instead of stopping on cp's error alone.
+copy_stage_into_repo() {
+    local repo_q
+    cp -R "$STAGE/." "$REPO_DIR/" && return 0
+    repo_q="$(printf '%q' "$REPO_DIR")"
+    {
+        echo "ERROR: copying the staged files into the repo ($REPO_DIR) failed partway, so the repo may now hold a mix of old and new files."
+        echo "See what changed with: git -C $repo_q status; git -C $repo_q diff"
+        echo "Discard the partial copy with: git -C $repo_q checkout -- .   (this also drops any uncommitted edits you had in the repo)"
+        echo "Then fix the cause cp reported above and run sync.sh again."
+    } >&2
+    exit 1
+}
+
 ROOT="$(projects_root_resolve)" || exit 1
-check_repo_under_root
+if ! projects_root_check_repo "$ROOT" "$REPO_DIR"; then
+    echo "Nothing was synced." >&2
+    exit 1
+fi
 
 echo "Syncing system configs to $REPO_DIR ..."
 
@@ -298,7 +310,7 @@ if [[ -n "$LEAKS" ]]; then
     exit 1
 fi
 
-cp -R "$STAGE/." "$REPO_DIR/"
+copy_stage_into_repo
 
 echo "Done. Changes:"
 cd "$REPO_DIR"
