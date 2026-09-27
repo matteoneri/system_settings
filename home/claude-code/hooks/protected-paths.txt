@@ -29,7 +29,10 @@
 ~/Library/Application Support/**/solflare*/**
 ~/.electrum/**
 ~/.config/Exodus/**
-~/.config/BraveSoftware/**/Extensions/**
-~/.config/google-chrome/**/Extensions/**
-~/.config/chromium/**/Extensions/**
+# Whole browser profiles, as the Bash rule already treats them: wallet
+# extensions keep their vaults beside Extensions/ (Local Extension Settings/,
+# IndexedDB/), and saved logins and cookies sit in the profile root.
+~/.config/BraveSoftware/**
+~/.config/google-chrome/**
+~/.config/chromium/**
 ~/.mozilla/firefox/**

@@ -115,8 +115,8 @@ search_reaches() {   # search_reaches ABSOLUTE_DIR -> true, with $hit set, if a 
         lit=${g%%[*?[]*}   # the literal part, up to the first wildcard
         # The literal part lies at or below the root: `/`, `~`, `~/.config`.
         if [[ $lit == "$r" || $lit == "$r"/* ]]; then hit=$g; return 0; fi
-        # The root lies inside the wildcard part (~/.config/google-chrome/Default
-        # under .../**/Extensions/**): walk the glob one component at a time; a
+        # The root lies inside the wildcard part (~/Library/Application Support/
+        # Google under .../**/metamask*/**): walk the glob one component at a time; a
         # root matching any leading part can reach what the rest names. `**` is
         # a bash `*` here and spans slashes, so it matches at any depth.
         [[ $lit != "$g" && $r == "$lit"* ]] || continue
