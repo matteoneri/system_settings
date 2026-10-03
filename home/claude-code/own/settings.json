@@ -20,7 +20,7 @@
       "Bash(git reset --hard*)"
     ]
   },
-  "model": "fable",
+  "model": "opus",
   "enableAllProjectMcpServers": false,
   "hooks": {
     "UserPromptSubmit": [

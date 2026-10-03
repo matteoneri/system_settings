@@ -1,0 +1,35 @@
+# Credential and secret locations, one glob per line, ~ = $HOME.
+# This file REPLACES the `Read(...)` entries that used to live in
+# permissions.deny. They had to go: any Read() deny rule arms two Claude Code
+# checks on a compound command containing a `cd`, one of them immune to bypass
+# mode, and those checks prompted on ordinary read-only commands (measured
+# repeatedly on 2026-09-03/04). protect-credentials.sh enforces this list with
+# a PreToolUse hook `deny`, which short-circuits every permission mode.
+#
+# Derived from the union of both config homes' former Read() rules. Keeping
+# them in sync is the point: adding a line here is the only way to protect a
+# new path now.
+~/.ssh/**
+~/.gnupg/**
+~/.aws/**
+~/.azure/**
+~/.config/gh/**
+~/.git-credentials
+~/.docker/config.json
+~/.kube/**
+~/.npmrc
+~/.npm/**
+~/.pypirc
+~/.gem/credentials
+~/Library/Keychains/**
+~/Library/Application Support/**/metamask*/**
+~/Library/Application Support/**/electrum*/**
+~/Library/Application Support/**/exodus*/**
+~/Library/Application Support/**/phantom*/**
+~/Library/Application Support/**/solflare*/**
+~/.electrum/**
+~/.config/Exodus/**
+~/.config/BraveSoftware/**/Extensions/**
+~/.config/google-chrome/**/Extensions/**
+~/.config/chromium/**/Extensions/**
+~/.mozilla/firefox/**
